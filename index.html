@@ -126,17 +126,19 @@ a{color:var(--mark)}
 .cons{font-size:.85rem;color:var(--muted);font-style:italic}
 .final{border-top:4px solid var(--brand-green)}
 .final h2{font-size:clamp(1.5rem,3.4vw,2.1rem);margin-bottom:2px}
-.final-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:16px}
-.final-card{border:1px solid var(--rule);border-radius:6px;padding:16px 18px;background:var(--ok-bg)}
+/* Tous les élus côte à côte sur ordinateur (--n = nombre de postes), 2 par ligne sur téléphone */
+.final-grid{display:grid;grid-template-columns:repeat(var(--n,5),minmax(0,1fr));gap:12px;margin-top:16px}
+@media (max-width:760px){.final-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.final-card:last-child:nth-child(odd){grid-column:1/-1;justify-self:center;width:calc(50% - 5px)}}
+.final-card{border:1px solid var(--rule);border-radius:6px;padding:14px 10px;background:var(--ok-bg);min-width:0}
 .final-card.vac{background:var(--paper)}
-.final-card .t{color:var(--muted);font:600 1rem "Barlow Semi Condensed","Barlow",sans-serif;text-transform:uppercase;letter-spacing:.04em}
-.final-card .n{font:700 clamp(1.8rem,4vw,2.6rem)/1.1 "Barlow Semi Condensed","Barlow",sans-serif;color:var(--ok);margin:4px 0 6px;overflow-wrap:anywhere}
+.final-card .t{color:var(--muted);font:600 clamp(.8rem,1.3vw,1rem) "Barlow Semi Condensed","Barlow",sans-serif;text-transform:uppercase;letter-spacing:.04em}
+.final-card .n{font:700 clamp(1.1rem,1.7vw,1.45rem)/1.1 "Barlow Semi Condensed","Barlow",sans-serif;color:var(--ok);margin:4px 0 6px;overflow-wrap:anywhere}
 .final-card.vac .n{color:var(--muted)}
-.final-card .how{color:var(--muted);font-size:.95rem}
+.final-card .how{color:var(--muted);font-size:.85rem;line-height:1.35}
 .final-card{display:flex;flex-direction:column;align-items:center;text-align:center}
 .av{display:inline-flex;align-items:center;justify-content:center;flex:none;border-radius:50%;overflow:hidden;background:var(--mark-bg);color:var(--mark);font:700 1rem "Barlow Semi Condensed","Barlow",sans-serif}
 .av img{width:100%;height:100%;object-fit:cover;display:block}
-.av.lg{width:clamp(110px,14vw,150px);height:clamp(110px,14vw,150px);font-size:2.6rem;margin:12px 0 4px;border:4px solid var(--sheet);box-shadow:0 0 0 2px var(--ok)}
+.av.lg{width:min(130px,80%);height:auto;aspect-ratio:1;font-size:2.4rem;margin:12px 0 4px;border:4px solid var(--sheet);box-shadow:0 0 0 2px var(--ok)}
 .av.sm{width:40px;height:40px;font-size:.95rem}
 .pole .who{display:flex;align-items:center;gap:10px;margin-top:4px}
 details.round{border:1px solid var(--rule);border-radius:6px;margin:10px 0;background:var(--sheet)}
@@ -343,8 +345,8 @@ function finalHTML(c){
   const rs=(results&&results.rounds)||{};const nR=Object.keys(rs).filter(k=>rs[k]&&rs[k].elig).length;
   return `<section class="block final"><h2>Responsables des pôles WUTS</h2>
     <p class="sub">Mandat de trois ans${nR?` · ${nR} tour${nR>1?"s":""} de vote`:""}</p>
-    <div class="final-grid">${c.posts.map(p=>{const n=c.elected[p];
-      return `<div class="final-card ${n?"":"vac"}"><div class="t">${esc(p)}</div>${n?avatar(n,"lg"):""}<div class="n">${n?esc(n):"Vacant"}</div><div class="how">${esc(howElected(c,p))}</div></div>`}).join("")}</div></section>`}
+    <div class="final-grid" style="--n:${c.posts.length}">${c.posts.map(p=>{const n=c.elected[p];
+      return `<div class="final-card ${n?"":"vac"}"><div class="t">${esc(p)}</div>${n?avatar(n,"lg"):""}<div class="n">${n?esc(n).replace(/-/g,"\u2011"):"Vacant"}</div><div class="how">${esc(howElected(c,p))}</div></div>`}).join("")}</div></section>`}
 const polesOrFinal=c=>c.phase==="termine"?finalHTML(c):polesHTML(c);
 
 /* ---------- côté votant ---------- */
