@@ -133,6 +133,12 @@ a{color:var(--mark)}
 .final-card .n{font:700 clamp(1.8rem,4vw,2.6rem)/1.1 "Barlow Semi Condensed","Barlow",sans-serif;color:var(--ok);margin:4px 0 6px;overflow-wrap:anywhere}
 .final-card.vac .n{color:var(--muted)}
 .final-card .how{color:var(--muted);font-size:.95rem}
+.final-card{display:flex;flex-direction:column;align-items:center;text-align:center}
+.av{display:inline-flex;align-items:center;justify-content:center;flex:none;border-radius:50%;overflow:hidden;background:var(--mark-bg);color:var(--mark);font:700 1rem "Barlow Semi Condensed","Barlow",sans-serif}
+.av img{width:100%;height:100%;object-fit:cover;display:block}
+.av.lg{width:clamp(110px,14vw,150px);height:clamp(110px,14vw,150px);font-size:2.6rem;margin:12px 0 4px;border:4px solid var(--sheet);box-shadow:0 0 0 2px var(--ok)}
+.av.sm{width:40px;height:40px;font-size:.95rem}
+.pole .who{display:flex;align-items:center;gap:10px;margin-top:4px}
 details.round{border:1px solid var(--rule);border-radius:6px;margin:10px 0;background:var(--sheet)}
 details.round>summary{cursor:pointer;padding:10px 14px;font:600 1.05rem "Barlow Semi Condensed","Barlow",sans-serif}
 details.round>summary .sub{font:400 .95rem "Barlow",sans-serif}
@@ -297,8 +303,14 @@ function phaseBanner(c){let [t,s]=PHASES[c.phase]||PHASES.preparation;
   const inRound=["vote","clos","revele","attribue"].includes(c.phase);
   const tour=inRound?(c.departage?` · Tour ${c.round} — départage ${esc(c.departage.post)}`:` · tour ${c.round}`):"";
   return `<div class="phase ${c.phase}"><span class="dot"></span><div><strong>${t}${tour}</strong><br><span class="sub">${s}</span></div></div>`}
+/* Photos des personnes pouvant être élues : photos/<prénom sans accent>.jpg. Sans photo, médaillon aux initiales. */
+const PHOTOS=["catherine","cedric","jean","jean-francois","jonas","julian","loic","marvin","renaud","simon"];
+const slug=n=>String(n).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+const initials=n=>String(n).split(/[\s-]+/).filter(Boolean).map(w=>w[0].toUpperCase()).slice(0,2).join("");
+function avatar(n,cls){const k=slug(n);
+  return `<span class="av ${cls}">${PHOTOS.includes(k)?`<img src="photos/${k}.jpg" alt="" loading="lazy">`:esc(initials(n))}</span>`}
 function polesHTML(c){return `<section class="block"><h2>Les pôles</h2><div class="poles">${c.posts.map(p=>{const e=c.elected[p];
-  return `<div class="pole ${e?"done":""}"><div class="t">${esc(p)}</div><div class="v ${e?"":"empty"}">${e?esc(e):"À pourvoir"}</div>${e&&c.consent[p]?`<div class="cons">par consentement</div>`:""}</div>`}).join("")}</div></section>`}
+  return `<div class="pole ${e?"done":""}"><div class="t">${esc(p)}</div>${e?`<div class="who">${avatar(e,"sm")}<div class="v">${esc(e)}</div></div>`:`<div class="v empty">À pourvoir</div>`}${e&&c.consent[p]?`<div class="cons">par consentement</div>`:""}</div>`}).join("")}</div></section>`}
 function eligHTML(R){
   return `<div class="poles">${R.posts.map(p=>{const l=(R.elig||{})[p]||[];
     return `<div class="pole"><div class="t">${esc(p)}</div>${l.length?`<ol class="elig">${l.map(x=>`<li><span>${esc(x.n)}</span><b class="num">${x.v}</b></li>`).join("")}</ol>`:`<div class="v empty">Personne n'atteint le seuil</div>`}</div>`}).join("")}</div>`}
@@ -332,7 +344,7 @@ function finalHTML(c){
   return `<section class="block final"><h2>Responsables des pôles WUTS</h2>
     <p class="sub">Mandat de trois ans${nR?` · ${nR} tour${nR>1?"s":""} de vote`:""}</p>
     <div class="final-grid">${c.posts.map(p=>{const n=c.elected[p];
-      return `<div class="final-card ${n?"":"vac"}"><div class="t">${esc(p)}</div><div class="n">${n?esc(n):"Vacant"}</div><div class="how">${esc(howElected(c,p))}</div></div>`}).join("")}</div></section>`}
+      return `<div class="final-card ${n?"":"vac"}"><div class="t">${esc(p)}</div>${n?avatar(n,"lg"):""}<div class="n">${n?esc(n):"Vacant"}</div><div class="how">${esc(howElected(c,p))}</div></div>`}).join("")}</div></section>`}
 const polesOrFinal=c=>c.phase==="termine"?finalHTML(c):polesHTML(c);
 
 /* ---------- côté votant ---------- */
