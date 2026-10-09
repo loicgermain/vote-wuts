@@ -124,6 +124,20 @@ a{color:var(--mark)}
 .elig li:first-child{border-top:0}
 .elig li b{color:var(--ok)}
 .cons{font-size:.85rem;color:var(--muted);font-style:italic}
+.final{border-top:4px solid var(--brand-green)}
+.final h2{font-size:clamp(1.5rem,3.4vw,2.1rem);margin-bottom:2px}
+.final-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:16px}
+.final-card{border:1px solid var(--rule);border-radius:6px;padding:16px 18px;background:var(--ok-bg)}
+.final-card.vac{background:var(--paper)}
+.final-card .t{color:var(--muted);font:600 1rem "Barlow Semi Condensed","Barlow",sans-serif;text-transform:uppercase;letter-spacing:.04em}
+.final-card .n{font:700 clamp(1.8rem,4vw,2.6rem)/1.1 "Barlow Semi Condensed","Barlow",sans-serif;color:var(--ok);margin:4px 0 6px;overflow-wrap:anywhere}
+.final-card.vac .n{color:var(--muted)}
+.final-card .how{color:var(--muted);font-size:.95rem}
+details.round{border:1px solid var(--rule);border-radius:6px;margin:10px 0;background:var(--sheet)}
+details.round>summary{cursor:pointer;padding:10px 14px;font:600 1.05rem "Barlow Semi Condensed","Barlow",sans-serif}
+details.round>summary .sub{font:400 .95rem "Barlow",sans-serif}
+details.round>.body{padding:0 14px 14px}
+details.adminbox>summary{cursor:pointer;font:600 1.3rem "Barlow Semi Condensed","Barlow",sans-serif}
 .tag{display:inline-block;font-size:.8rem;font-weight:600;padding:2px 8px;border-radius:999px;margin-top:4px;background:var(--paper);color:var(--muted)}
 .tag.ok{background:var(--ok-bg);color:var(--ok)}
 .tag.warn{background:var(--warn-bg);color:var(--warn)}
@@ -200,7 +214,7 @@ let FB=null,db=null,auth=null;
 let cfg=null,results=null,loadedCfg=false,fatal=null;
 let code=null,codeValid=null,myBallot=null,ballotUnsub=null,ballotSubKey=null;
 let adminUser=null,adminBallots=[],adminBallotsKey=null,adminBallotsUnsub=null,tokens=[];
-let draft=null,attrib=null,dec=null,showPreview=false,busy=false,confirmKey=null,pending=false,loginErr="",cs={post:"",name:""};
+let draft=null,attrib=null,dec=null,showPreview=false,busy=false,confirmKey=null,pending=false,loginErr="",cs={post:"",name:""},uiOpen={};
 
 function C(){const c={...DEFAULTS,...(cfg||{})};delete c.threshold;delete c.base;
   c.elected=c.elected||{};c.refus=c.refus||{};c.consent=c.consent||{};
@@ -291,11 +305,35 @@ function eligHTML(R){
 function lastRevealed(){const rs=results&&results.rounds;if(!rs)return null;const ks=Object.keys(rs).map(Number).filter(k=>rs[k]&&rs[k].elig).sort((a,b)=>b-a);return ks.length?{r:ks[0],R:rs[ks[0]]}:null}
 function seuilLine(R){return R.kind==="departage"?`${R.ballots} bulletin(s) dépouillé(s). Tour de départage : pas de seuil, le poste revient à la personne qui obtient le plus de voix.`
   :`${R.ballots} bulletin(s) dépouillé(s). Seuil d'éligibilité : <b class="num">${R.need}</b> voix (${pct(R.need,R.nVoters)} de ${R.nVoters} votants). Chaque poste liste les personnes éligibles, par voix décroissantes.`}
-function resultsHTML(){
-  const L=lastRevealed();if(!L)return "";const {r,R}=L;const att=results.attribution&&results.attribution[r];
-  return `<section class="block"><h2>Résultats du ${roundLabel(r,R)}</h2>
-    <p class="sub">${seuilLine(R)}</p>${eligHTML(R)}
-    ${att?`<h3>Attribution du ${roundLabel(r,R)}</h3><p>${R.posts.map(p=>`${esc(p)} : <b>${att[p]?esc(att[p]):"vacant"}</b>`).join(" · ")}</p>`:""}</section>`}
+/* Historique de tous les tours publiés, du plus récent au plus ancien. Le dernier est déplié par défaut
+   (sauf élection terminée) ; l'état ouvert/fermé de chaque tour survit aux re-rendus (uiOpen). */
+const isOpen=(k,def)=>k in uiOpen?uiOpen[k]:def;
+const attribLine=(R,att)=>R.posts.map(p=>`${esc(p)} : <b>${att[p]?esc(att[p]):"vacant"}</b>`).join(" · ");
+function resultsHTML(c){
+  const rs=(results&&results.rounds)||{},atts=(results&&results.attribution)||{};
+  const ks=Object.keys(rs).map(Number).filter(k=>rs[k]&&rs[k].elig).sort((a,b)=>b-a);if(!ks.length)return "";
+  const fin=c.phase==="termine";
+  return `<section class="block"><h2>${ks.length>1?`Historique des ${ks.length} tours`:"Résultats"}</h2>
+    ${ks.length>1?`<p class="sub">Du plus récent au plus ancien. Cliquez sur un tour pour le déplier.</p>`:""}
+    ${ks.map((r,i)=>{const R=rs[r],att=atts[r],k="round-"+r,lab=roundLabel(r,R);
+      return `<details class="round" data-keep="${k}" ${isOpen(k,!fin&&i===0)?"open":""}><summary>${esc(lab[0].toUpperCase()+lab.slice(1))}
+        <span class="sub"> — ${att?attribLine(R,att):"attribution pas encore publiée"}</span></summary>
+        <div class="body"><p class="sub">${seuilLine(R)}</p>${eligHTML(R)}
+        ${att?`<h3>Attribution</h3><p>${attribLine(R,att)}</p>`:""}</div></details>`}).join("")}</section>`}
+/* Écran final, pensé pour la projection : un responsable par pôle, en grand, et comment il a été désigné */
+function howElected(c,p){const n=c.elected[p];if(!n)return "";if(c.consent[p])return "Par consentement en séance";
+  const rs=(results&&results.rounds)||{},atts=(results&&results.attribution)||{};
+  const r=Object.keys(atts).map(Number).sort((a,b)=>b-a).find(r=>atts[r]&&atts[r][p]===n);
+  if(r===undefined||!rs[r])return "";const R=rs[r];const x=((R.elig||{})[p]||[]).find(e=>e.n===n);
+  const v=x?` · ${x.v} voix sur ${R.ballots} bulletin${R.ballots>1?"s":""}`:"";
+  return (R.kind==="departage"?`Départage, tour ${r}`:`Élu·e au tour ${r}`)+v}
+function finalHTML(c){
+  const rs=(results&&results.rounds)||{};const nR=Object.keys(rs).filter(k=>rs[k]&&rs[k].elig).length;
+  return `<section class="block final"><h2>Responsables des pôles WUTS</h2>
+    <p class="sub">Mandat de trois ans${nR?` · ${nR} tour${nR>1?"s":""} de vote`:""}</p>
+    <div class="final-grid">${c.posts.map(p=>{const n=c.elected[p];
+      return `<div class="final-card ${n?"":"vac"}"><div class="t">${esc(p)}</div><div class="n">${n?esc(n):"Vacant"}</div><div class="how">${esc(howElected(c,p))}</div></div>`}).join("")}</div></section>`}
+const polesOrFinal=c=>c.phase==="termine"?finalHTML(c):polesHTML(c);
 
 /* ---------- côté votant ---------- */
 function codeHTML(){
@@ -351,7 +389,7 @@ function refreshBallot(){const c=C(),cands=candidates(c),miss=missingPosts(c);
 function voterHTML(c){
   let main="";
   if(c.phase==="vote")main=(!code||codeValid!==true)?(codeValid===null&&code?`<p class="sub">Vérification du code…</p>`:codeHTML()):ballotHTML(c);
-  return phaseBanner(c)+main+polesHTML(c)+resultsHTML();
+  return phaseBanner(c)+main+polesOrFinal(c)+resultsHTML(c);
 }
 
 /* ---------- côté administration ---------- */
@@ -462,7 +500,10 @@ function adminHTML(c){
   if(c.phase==="termine")ctl=`<p class="sub">Élection terminée.</p>`;
   const refusGrid=`<div class="scroll"><table><thead><tr><th></th>${c.posts.map(p=>`<th>${esc(p)}</th>`).join("")}</tr></thead><tbody>
     ${c.eligible.map(n=>`<tr><th>${esc(n)}</th>${c.posts.map(p=>`<td class="${refused(c,n,p)?"hatch":""}"><input type="checkbox" data-refus="${esc(n)}" data-post="${esc(p)}" ${refused(c,n,p)?"checked":""} ${prep&&!busy?"":"disabled"} aria-label="${esc(n)} refuse ${esc(p)}"></td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
-  return `<section class="block admin"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Administration</h2><span class="sub">${esc(adminUser.email)} · <a href="#" data-act="logout">déconnexion</a></span></div>
+  const fin=c.phase==="termine";
+  const head=fin?`<details class="adminbox" data-keep="admin" ${isOpen("admin",false)?"open":""}><summary>Administration</summary><p class="sub">${esc(adminUser.email)} · <a href="#" data-act="logout">déconnexion</a></p>`
+    :`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Administration</h2><span class="sub">${esc(adminUser.email)} · <a href="#" data-act="logout">déconnexion</a></span></div>`;
+  return `<section class="block admin">${head}
     <h3>Déroulement</h3>${ctl}
     <h3>Codes de vote</h3>
     <p class="sub">${tokens.length} code(s) actif(s). Imprimez les bulletins d'accès, découpez-les et faites-les tirer au sort : personne, administrateur compris, ne sait alors qui détient quel code.</p>
@@ -478,7 +519,7 @@ function adminHTML(c){
       <label class="f">Postes<textarea id="p-posts" ${prep?"":"disabled"}>${esc(c.posts.join("\n"))}</textarea></label></div>
     <div class="row" style="margin-top:12px">${btn("savecfg",prep?"Enregistrer les paramètres":"Enregistrer présents et seuil","",!seuilEditable)}</div>
     <h3>Zone sensible</h3><p class="sub">Efface bulletins, résultats et paramètres. Les codes sont conservés.</p>
-    <div class="row">${arm("reset","Réinitialiser l'élection","Confirmer : tout effacer")}</div></section>
+    <div class="row">${arm("reset","Réinitialiser l'élection","Confirmer : tout effacer")}</div>${fin?"</details>":""}</section>
     <div id="slips">${tokens.length?slipsHTML():""}</div>`;
 }
 
@@ -496,7 +537,7 @@ function render0(){
   if(ADMIN_MODE){
     if(!adminUser){$app.innerHTML=loginHTML()+phaseBanner(c);return}
     syncAdmin(c);
-    $app.innerHTML=phaseBanner(c)+adminHTML(c)+polesHTML(c)+resultsHTML();return;
+    $app.innerHTML=c.phase==="termine"?phaseBanner(c)+finalHTML(c)+resultsHTML(c)+adminHTML(c):phaseBanner(c)+adminHTML(c)+polesHTML(c)+resultsHTML(c);return;
   }
   syncBallot(c);
   $app.innerHTML=voterHTML(c);
@@ -592,6 +633,7 @@ document.addEventListener("input",e=>{const id=e.target.id;if(id!=="p-th"&&id!==
   const a=document.getElementById("p-pct");if(a)a.textContent=`soit ${s>0?pct(s,nv):"–"} de ${nv} votants (indicatif)`;
   const b=document.getElementById("p-sug");const k=suggestSeuil(nv);
   if(b&&k)b.innerHTML=`Seuil suggéré par la règle du cadre (70 % ± 3 %, sinon le plus proche de 70 %) pour ${nv} présents : <b>${k}</b> voix (${pct(k,nv)}). L'administrateur décide.`});
+document.addEventListener("toggle",e=>{const k=e.target.dataset&&e.target.dataset.keep;if(k)uiOpen[k]=e.target.open},true);
 document.addEventListener("change",e=>{const t=e.target;
   if(t.dataset.refus!==undefined){const c=C();const r={...c.refus};const s=new Set(r[t.dataset.refus]||[]);if(t.checked)s.add(t.dataset.post);else s.delete(t.dataset.post);r[t.dataset.refus]=[...s];act(()=>setCfg({refus:r}),"Refus enregistré")}
   else if(t.dataset.acc!==undefined){const k=t.dataset.acc+"|"+t.dataset.post;if(t.value==="R")dec.refuse[k]=true;else delete dec.refuse[k];dec.choix={};dec.tie={};dec.cp={};attrib=null;render()}
