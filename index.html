@@ -200,7 +200,7 @@ let FB=null,db=null,auth=null;
 let cfg=null,results=null,loadedCfg=false,fatal=null;
 let code=null,codeValid=null,myBallot=null,ballotUnsub=null,ballotSubKey=null;
 let adminUser=null,adminBallots=[],adminBallotsKey=null,adminBallotsUnsub=null,tokens=[];
-let draft=null,attrib=null,dec=null,showPreview=false,busy=false,confirmKey=null,pending=false,loginErr="";
+let draft=null,attrib=null,dec=null,showPreview=false,busy=false,confirmKey=null,pending=false,loginErr="",cs={post:"",name:""};
 
 function C(){const c={...DEFAULTS,...(cfg||{})};delete c.threshold;delete c.base;
   c.elected=c.elected||{};c.refus=c.refus||{};c.consent=c.consent||{};
@@ -456,9 +456,9 @@ function adminHTML(c){
         <div class="row">${btn("nextround",`Ouvrir le tour ${c.round+1} pour les postes vacants`,"primary")}
         ${H.depOpts.map(o=>btn("departage",`Ouvrir un tour de départage — ${esc(o.post)} (${o.cands.map(esc).join(", ")})`,"",false,`data-post="${esc(o.post)}"`)).join("")}</div>
         ${consentOK?`<h3>Attribuer par consentement</h3><p class="sub">Après nomination argumentée et levée des objections en séance.</p>
-          <div class="row"><select id="cs-post">${vac.map(p=>`<option>${esc(p)}</option>`).join("")}</select>
-          <select id="cs-name"><option value="">Personne…</option>${free.map(n=>`<option>${esc(n)}</option>`).join("")}</select>
-          <button class="btn primary ${confirmKey==="consent"?"armed":""}" data-act="consent" ${busy?"disabled":""}>${confirmKey==="consent"?"Confirmer l'attribution":"Attribuer par consentement"}</button></div>`:""}`}}
+          <div class="row"><select id="cs-post" data-cs="post">${vac.map(p=>`<option ${cs.post===p?"selected":""}>${esc(p)}</option>`).join("")}</select>
+          <select id="cs-name" data-cs="name"><option value="">Personne…</option>${free.map(n=>`<option ${cs.name===n?"selected":""}>${esc(n)}</option>`).join("")}</select>
+          <button class="btn primary ${confirmKey==="consent"?"armed":""}" data-act="consent" ${busy?"disabled":""}>${confirmKey==="consent"?`Confirmer : ${esc(cs.name)} → ${esc(cs.post)}`:"Attribuer par consentement"}</button></div>`:""}`}}
   if(c.phase==="termine")ctl=`<p class="sub">Élection terminée.</p>`;
   const refusGrid=`<div class="scroll"><table><thead><tr><th></th>${c.posts.map(p=>`<th>${esc(p)}</th>`).join("")}</tr></thead><tbody>
     ${c.eligible.map(n=>`<tr><th>${esc(n)}</th>${c.posts.map(p=>`<td class="${refused(c,n,p)?"hatch":""}"><input type="checkbox" data-refus="${esc(n)}" data-post="${esc(p)}" ${refused(c,n,p)?"checked":""} ${prep&&!busy?"":"disabled"} aria-label="${esc(n)} refuse ${esc(p)}"></td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
@@ -556,12 +556,13 @@ const ACTIONS={
   nextround:()=>{const c=C();act(()=>setCfg({round:c.round+1,phase:"vote",openPosts:vacantPosts(c),departage:null}),"Nouveau tour ouvert")},
   departage:t=>{const c=C();const o=history2(c).depOpts.find(x=>x.post===t.dataset.post);if(!o)return;
     act(()=>setCfg({round:c.round+1,phase:"vote",openPosts:[o.post],departage:{post:o.post,cands:o.cands}}),"Tour de départage ouvert")},
-  consent:()=>{const c=C();const p=document.getElementById("cs-post").value,n=document.getElementById("cs-name").value;
+  consent:()=>{const c=C();const p=document.getElementById("cs-post").value,n=document.getElementById("cs-name").value;cs={post:p,name:n};
     if(!p||!n){flash("Choisissez un poste et une personne.",true);return}
     if(refused(c,n,p)){flash(`${n} a déclaré un refus d'office pour ${p}.`,true);return}
     if(electedNames(c).includes(n)){flash(`${n} est déjà élu·e.`,true);return}
     if(!armed("consent"))return;
     const elected={...c.elected,[p]:n},consent={...c.consent,[p]:true};
+    cs={post:"",name:""};
     act(()=>setCfg({elected,consent,phase:c.posts.every(q=>elected[q])?"termine":"attribue"}),`${p} attribué par consentement`)},
   finish:()=>act(()=>setCfg({phase:"termine"}),"Élection clôturée"),
   savecfg:()=>{const c=C();const lines=id=>document.getElementById(id).value.split("\n").map(s=>s.trim()).filter(Boolean);
@@ -596,6 +597,7 @@ document.addEventListener("change",e=>{const t=e.target;
   else if(t.dataset.acc!==undefined){const k=t.dataset.acc+"|"+t.dataset.post;if(t.value==="R")dec.refuse[k]=true;else delete dec.refuse[k];dec.choix={};dec.tie={};dec.cp={};attrib=null;render()}
   else if(t.dataset.choix!==undefined){if(t.value)dec.choix[t.dataset.choix]=t.value;else delete dec.choix[t.dataset.choix];attrib=null;render()}
   else if(t.dataset.tie!==undefined){if(t.value)dec.tie[t.dataset.tie]=t.value;else delete dec.tie[t.dataset.tie];attrib=null;render()}
+  else if(t.dataset.cs!==undefined){cs[t.dataset.cs]=t.value;if(confirmKey==="consent"){confirmKey=null;render()}}
   else if(t.dataset.attrib!==undefined){attrib.map[t.dataset.attrib]=t.value;attrib.manual[t.dataset.attrib]=true;render()}
 });
 
