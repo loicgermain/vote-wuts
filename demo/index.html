@@ -166,6 +166,7 @@ td.no{background:var(--no-bg)}
 .pick[aria-pressed=true]::before{border-color:var(--mark);background:var(--mark) no-repeat center/14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3 3 7-7' fill='none' stroke='white' stroke-width='2.5'/%3E%3C/svg%3E")}
 .pick.ref{background:repeating-linear-gradient(135deg,var(--hatch) 0 5px,transparent 5px 10px);color:var(--muted);cursor:not-allowed;flex-direction:row}
 .pick.ref::before{display:none}
+.pick.full{opacity:.45;cursor:not-allowed}
 .pick small{margin-left:auto;font-size:.8rem}
 @media (max-width:480px){.wrap{padding-left:10px;padding-right:10px}section.block{padding:12px}.post-card{padding:10px}}
 .post-miss{display:none;margin:8px 0 0;color:var(--warn);font-weight:600;font-size:.9rem}
@@ -186,7 +187,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 /* Version de démonstration, indépendante de l'application réelle : aucune connexion à Firebase.
    Les données vivent dans le localStorage du navigateur et les bulletins des autres présents sont simulés. */
 
-const DEFAULTS={phase:"preparation",round:1,seuil:10,nVoters:15,nCodes:15,
+const DEFAULTS={phase:"preparation",round:1,seuil:10,nVoters:15,nCodes:15,maxTicks:3,
   eligible:["Renaud","Jean","Marvin","Catherine","Jonas","Jean-François","Julian","Simon","Yannick","Cédric","Didier","Arnaud","Loïc"],
   posts:["Projets E","Projets M","Administratif","Terrain","Coordination"],
   openPosts:null,elected:{},refus:{},consent:{},departage:null};
@@ -362,6 +363,10 @@ function shuffled(list,seed){let h=2166136261;for(const ch of seed)h=Math.imul(h
   const rnd=()=>{h=h+0x6D2B79F5|0;let t=Math.imul(h^h>>>15,1|h);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
   const a=[...list];for(let i=a.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 const tickable=(c,n,p)=>!!c.departage||!refused(c,n,p);
+/* Nombre maximum de personnes cochées par poste (0 : sans limite). Pas de limite en tour de départage. */
+const maxTicks=c=>c.departage?0:Math.max(0,parseInt(c.maxTicks,10)||0);
+const nTicked=(c,p)=>{const cands=candidates(c);return draft.ticks[p].filter(n=>cands.includes(n)).length};
+const overPosts=c=>{const mx=maxTicks(c);return mx?c.openPosts.filter(p=>nTicked(c,p)>mx):[]};
 function missingPosts(c){const cands=candidates(c);
   return c.openPosts.filter(p=>cands.some(n=>tickable(c,n,p))&&!draft.ticks[p].some(n=>cands.includes(n)&&tickable(c,n,p)))}
 function ballotHTML(c){
@@ -369,14 +374,15 @@ function ballotHTML(c){
   const nTicks=Object.values(draft.ticks).reduce((a,x)=>a+x.length,0);
   const titre=c.departage?`Tour ${c.round} — départage ${esc(c.departage.post)}`:`tour ${c.round}`;
   return `<section class="block"><h2>Votre bulletin · ${titre}</h2>
-    <p class="sub">Cochez, pour chaque poste, toutes les personnes que vous accepteriez, vous-même compris si vous le souhaitez. Ne pas cocher une personne n'est pas un jugement sur elle : cela veut seulement dire qu'on ne la voit pas, à ce stade, dans ce rôle-là.</p>
+    <p class="sub">Cochez, pour chaque poste, ${maxTicks(c)?`les personnes que vous accepteriez, <b>${maxTicks(c)} au maximum</b>`:"toutes les personnes que vous accepteriez"}, vous-même compris si vous le souhaitez. Ne pas cocher une personne n'est pas un jugement sur elle : cela veut seulement dire qu'on ne la voit pas, à ce stade, dans ce rôle-là.</p>
     <p class="sub"><b>Le vote blanc n'est pas permis : cochez au moins une personne par poste.</b></p>
     ${saved?`<div class="note ok">Votre bulletin est dans l'urne.${draft.dirty?" Vous avez des modifications non validées.":" Vous pouvez encore le modifier jusqu'à la clôture."}</div>`:""}
-    ${c.openPosts.map(p=>{const k=draft.ticks[p].filter(n=>cands.includes(n)).length;
-      return `<div class="post-card ${miss.includes(p)?"missing":""}" data-card="${esc(p)}"><div class="post-h"><h3>${esc(p)}</h3><span class="post-n num" data-n="${esc(p)}">${k} cochée(s)</span></div>
+    ${c.openPosts.map(p=>{const k=nTicked(c,p),mx=maxTicks(c);
+      return `<div class="post-card ${miss.includes(p)?"missing":""}" data-card="${esc(p)}"><div class="post-h"><h3>${esc(p)}</h3><span class="post-n num" data-n="${esc(p)}">${k}${mx?" / "+mx:""} cochée(s)</span></div>
       <div class="picks">${shuffled(cands,code+"|"+c.round+"|"+p).map(n=>{
         if(!c.departage&&refused(c,n,p))return `<button class="pick ref" disabled aria-label="${esc(n)} : refus d'office">${esc(n)}<small>refuse</small></button>`;
-        return `<button class="pick" data-tick="${esc(p)}" data-cand="${esc(n)}" aria-pressed="${draft.ticks[p].includes(n)}">${esc(n)}</button>`}).join("")}</div>
+        const on=draft.ticks[p].includes(n),full=!on&&mx&&k>=mx;
+        return `<button class="pick${full?" full":""}" data-tick="${esc(p)}" data-cand="${esc(n)}" aria-pressed="${on}" ${full?"disabled":""}>${esc(n)}</button>`}).join("")}</div>
       <p class="post-miss">Cochez au moins une personne pour ce poste.</p></div>`}).join("")}
     <div class="note" id="miss-note" ${miss.length?"":"hidden"}>Cochez au moins une personne pour : <span id="miss-list">${miss.map(esc).join(", ")}</span>.</div>
     <div class="row" style="margin-top:14px"><button class="btn primary" id="submit-btn" data-act="submit" ${busy||miss.length||(saved&&!draft.dirty)?"disabled":""}>${saved?"Valider la nouvelle version":"Valider mon bulletin"}</button>
@@ -386,7 +392,9 @@ function ballotHTML(c){
 function refreshBallot(){const c=C(),cands=candidates(c),miss=missingPosts(c);
   c.openPosts.forEach(p=>{const card=[...document.querySelectorAll("[data-card]")].find(x=>x.dataset.card===p);if(!card)return;
     card.classList.toggle("missing",miss.includes(p));
-    const n=card.querySelector("[data-n]");if(n)n.textContent=draft.ticks[p].filter(x=>cands.includes(x)).length+" cochée(s)"});
+    const k=nTicked(c,p),mx=maxTicks(c);
+    const n=card.querySelector("[data-n]");if(n)n.textContent=k+(mx?" / "+mx:"")+" cochée(s)";
+    card.querySelectorAll("[data-tick]").forEach(b=>{const full=!!mx&&k>=mx&&b.getAttribute("aria-pressed")!=="true";b.disabled=full;b.classList.toggle("full",full)})});
   const note=document.getElementById("miss-note");if(note){note.hidden=!miss.length;document.getElementById("miss-list").textContent=miss.join(", ")}
   const saved=myBallot&&myBallot.round===c.round;
   const b=document.getElementById("submit-btn");if(b)b.disabled=busy||miss.length>0||(saved&&!draft.dirty);
@@ -522,6 +530,8 @@ function adminHTML(c){
     <div class="row" style="margin-bottom:10px"><label class="row" style="gap:6px">Votants attendus (présents) <input id="p-nv" type="number" min="1" max="200" value="${c.nVoters}" style="width:70px" ${seuilEditable?"":"disabled"}></label></div>
     ${c.phase==="attribue"?`<p class="sub" style="margin-top:-4px">Entre deux tours, en cas de départ : ajustez le nombre de présents puis le seuil. Les codes ne changent pas.</p>`:""}
     ${seuilHTML(c,seuilEditable)}
+    <div class="row" style="margin-top:10px"><label class="row" style="gap:6px">Personnes cochées au maximum par poste <input id="p-mx" type="number" min="0" max="200" value="${c.maxTicks}" style="width:70px" ${prep?"":"disabled"}></label>
+      <span class="sub">0 : sans limite. Ne s'applique pas aux tours de départage.</span></div>
     <div class="grid2" style="grid-template-columns:1fr 1fr;margin-top:12px">
       <label class="f">Éligibles (un par ligne)<textarea id="p-elig" ${prep?"":"disabled"}>${esc(c.eligible.join("\n"))}</textarea></label>
       <label class="f">Postes<textarea id="p-posts" ${prep?"":"disabled"}>${esc(c.posts.join("\n"))}</textarea></label></div>
@@ -534,7 +544,7 @@ function adminHTML(c){
 /* ---------- rendu ---------- */
 /* Paramètres saisis mais pas encore enregistrés : conservés d'un rendu à l'autre (sinon le 1er clic d'un bouton
    à confirmer, ou une mise à jour de la base, les remettrait aux valeurs enregistrées). Oubliés au changement de phase. */
-const P_IDS=["p-nv","p-th","p-nc","p-elig","p-posts"];let pDraft={},pDraftKey=null;
+const P_IDS=["p-nv","p-th","p-nc","p-mx","p-elig","p-posts"];let pDraft={},pDraftKey=null;
 function render(){
   const keep=[...$app.querySelectorAll(".scroll")].map(x=>x.scrollLeft);const y=window.scrollY;
   render0();
@@ -590,7 +600,8 @@ function consentAttrib(c,p,n){
 const ACTIONS={
   usecode:()=>{const v=normCode(document.getElementById("codein").value);if(v.length!==8){flash("Le code compte 8 caractères.",true);return}code=v;draft=null;checkCode(v)},
   forget:()=>{code=null;codeValid=null;draft=null;try{localStorage.removeItem(CODE_KEY)}catch(e){}history.replaceState(null,"",baseUrl());render()},
-  submit:()=>{const c=C();if(missingPosts(c).length){flash("Cochez au moins une personne par poste.",true);return}const ticks={};c.openPosts.forEach(p=>ticks[p]=draft.ticks[p].filter(n=>c.departage||!refused(c,n,p)));
+  submit:()=>{const c=C();if(missingPosts(c).length){flash("Cochez au moins une personne par poste.",true);return}
+    if(overPosts(c).length){flash(`${maxTicks(c)} personnes au maximum par poste : ${overPosts(c).join(", ")}.`,true);return}const ticks={};c.openPosts.forEach(p=>ticks[p]=draft.ticks[p].filter(n=>c.departage||!refused(c,n,p)));
     act(async()=>{await FB.setDoc(FB.doc(db,"ballots",c.round+"_"+code),{round:c.round,code,ticks});draft.dirty=false;draft.loaded=true},"Bulletin validé")},
   login:()=>{const m=document.getElementById("lg-mail").value.trim(),p=document.getElementById("lg-pw").value;
     act(async()=>{try{await FB.signInWithEmailAndPassword(auth,m,p);loginErr=""}catch(e){loginErr="Connexion refusée : vérifiez l'e-mail et le mot de passe."}})},
@@ -638,7 +649,8 @@ const ACTIONS={
     const raw=parseInt(document.getElementById("p-th").value,10);
     if(!(raw>=1&&raw<=nv)){flash(`Le seuil doit être compris entre 1 et ${nv} voix.`,true);return}
     const patch={seuil:raw,nVoters:nv};
-    if(prep){patch.eligible=lines("p-elig");patch.posts=lines("p-posts");patch.openPosts=patch.posts.filter(p=>!c.elected[p])}
+    if(prep){const mx=parseInt(document.getElementById("p-mx").value,10);if(!(mx>=0)){flash("Maximum par poste invalide.",true);return}
+      patch.maxTicks=mx;patch.eligible=lines("p-elig");patch.posts=lines("p-posts");patch.openPosts=patch.posts.filter(p=>!c.elected[p])}
     act(async()=>{await setCfg(patch);pDraft={}},prep?"Paramètres enregistrés":"Présents et seuil enregistrés")},
   demofill:()=>demoFill(true),
   demorestart:()=>{if(!armed("demorestart"))return;demoWipe();location.href=baseUrl()+(ADMIN_MODE?"?admin":"")},
@@ -742,6 +754,7 @@ function demoAffinity(p,n){const a=demoStore.aff||(demoStore.aff={});
 function demoBallot(c){const cands=candidates(c),ticks={};
   c.openPosts.forEach(p=>{const ok=cands.filter(n=>tickable(c,n,p));
     ticks[p]=ok.filter(n=>Math.random()<demoAffinity(p,n));
+    const mx=maxTicks(c);if(mx)ticks[p]=ticks[p].sort((a,b)=>demoAffinity(p,b)-demoAffinity(p,a)).slice(0,mx);
     if(!ticks[p].length&&ok.length)ticks[p]=[ok.reduce((a,b)=>demoAffinity(p,b)>demoAffinity(p,a)?b:a)]});
   return ticks}
 /* Remplit l'urne jusqu'au nombre de présents, en laissant la place du code de démonstration (vue votant)
