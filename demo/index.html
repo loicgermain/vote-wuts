@@ -242,11 +242,14 @@ document.addEventListener("focusout",()=>{if(pending){pending=false;setTimeout(r
 function tally(){
   const c=C(),cands=candidates(c),dep=!!c.departage;const list=adminBallots.filter(b=>b.round===c.round);
   const counts={};c.openPosts.forEach(p=>{counts[p]={};cands.forEach(n=>counts[p][n]=0)});
-  list.forEach(b=>c.openPosts.forEach(p=>[...new Set((b.ticks||{})[p]||[])].forEach(x=>{if(cands.includes(x)&&(dep||!refused(c,x,p)))counts[p][x]++})));
+  /* Un bulletin qui dépasse le maximum de cases sur un poste (envoyé hors de la page) n'est pas compté pour ce poste. */
+  const mx=maxTicks(c);let over=0;
+  list.forEach(b=>{let bad=false;c.openPosts.forEach(p=>{const t=[...new Set((b.ticks||{})[p]||[])];if(mx&&t.length>mx){bad=true;return}
+    t.forEach(x=>{if(cands.includes(x)&&(dep||!refused(c,x,p)))counts[p][x]++})});if(bad)over++});
   const elig={};
   c.openPosts.forEach(p=>{elig[p]=cands.filter(n=>dep||(!refused(c,n,p)&&counts[p][n]>=c.seuil))
     .map(n=>({n,v:counts[p][n]})).sort((a,b)=>b.v-a.v||a.n.localeCompare(b.n,"fr"))});
-  return{kind:dep?"departage":"normal",post:dep?c.departage.post:null,ballots:list.length,need:dep?null:c.seuil,nVoters:c.nVoters,posts:[...c.openPosts],elig};
+  return{over,kind:dep?"departage":"normal",post:dep?c.departage.post:null,ballots:list.length,need:dep?null:c.seuil,nVoters:c.nVoters,posts:[...c.openPosts],elig};
 }
 const PUB_KEYS=["kind","post","ballots","need","nVoters","posts","elig","at"];
 function cleanRounds(rs){const o={};
@@ -495,7 +498,8 @@ function adminHTML(c){
   if(c.phase==="vote")ctl=`<p class="num" style="font-size:1.4rem"><b>${nB}</b> / ${c.nVoters} bulletin(s) déposé(s)</p>${nB>c.nVoters?`<div class="note err">Plus de bulletins que de présents : un code non distribué a été utilisé.</div>`:""}${btn("close","Clore le vote","primary")}`;
   if(c.phase==="clos"){const T=tally();
     const integ=T.ballots>c.nVoters?`<div class="note err">${T.ballots} bulletins pour ${c.nVoters} votants attendus.</div>`:`<div class="note ok">${T.ballots} bulletin(s) déposé(s) sur ${c.nVoters}. Un bulletin par code au maximum, garanti par la base.</div>`;
-    ctl=`${integ}<div class="row">${btn("reveal","Révéler les résultats à tous","primary")}${btn("reopen","Rouvrir le vote")}${btn("preview",showPreview?"Masquer l'aperçu":"Aperçu privé du dépouillement")}</div>
+    const lim=T.over?`<div class="note err">${T.over} bulletin(s) hors limite : plus de ${maxTicks(c)} personnes cochées sur un poste. Ces bulletins ne sont pas comptés pour le ou les postes concernés.</div>`:"";
+    ctl=`${integ}${lim}<div class="row">${btn("reveal","Révéler les résultats à tous","primary")}${btn("reopen","Rouvrir le vote")}${btn("preview",showPreview?"Masquer l'aperçu":"Aperçu privé du dépouillement")}</div>
       <p class="sub" style="margin-top:8px">${c.departage?"Tour de départage : pas de seuil.":`Seuil : ${c.seuil} voix.`}</p>
       ${showPreview?`<p class="num"><b>${T.ballots}</b> bulletin(s) déposé(s). Seules les personnes ${c.departage?"à départager":"ayant atteint le seuil"} sont affichées.</p>${eligHTML(T)}`:""}`}
   if(c.phase==="revele"){const L=lastRevealed();if(L&&L.r===c.round)ctl=revealAdminHTML(c,L.R,btn)}
