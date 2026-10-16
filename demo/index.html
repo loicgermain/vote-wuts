@@ -186,8 +186,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 /* Version de démonstration, indépendante de l'application réelle : aucune connexion à Firebase.
    Les données vivent dans le localStorage du navigateur et les bulletins des autres présents sont simulés. */
 
-const DEFAULTS={phase:"preparation",round:1,seuil:9,nVoters:13,nCodes:13,
-  eligible:["Renaud","Jean","Marvin","Catherine","Jonas","Jean-François","Julian","Simon","Yannick","Cédric","Loïc"],
+const DEFAULTS={phase:"preparation",round:1,seuil:10,nVoters:15,nCodes:15,
+  eligible:["Renaud","Jean","Marvin","Catherine","Jonas","Jean-François","Julian","Simon","Yannick","Cédric","Didier","Arnaud","Loïc"],
   posts:["Projets E","Projets M","Administratif","Terrain","Coordination"],
   openPosts:null,elected:{},refus:{},consent:{},departage:null};
 const PHASES={
@@ -225,9 +225,9 @@ const candidates=c=>{const el=electedNames(c);return (c.departage?c.departage.ca
 const refused=(c,n,p)=>(c.refus[n]||[]).includes(p);
 const pct=(s,n)=>n>0?(100*s/n).toFixed(1).replace(".",",")+" %":"–";
 /* Règle du cadre : part des voix dans 70 % ± 3 % ; à défaut, la plus proche de 70 %.
-   La plus proche de 70 % est forcément dans la fourchette quand une valeur y tombe. Égalité d'écart : la valeur haute. */
+   La plus proche de 70 % est forcément dans la fourchette quand une valeur y tombe. Égalité d'écart : la valeur basse. */
 function suggestSeuil(n){if(!(n>0))return null;let best=null;
-  for(let k=1;k<=n;k++){const d=Math.abs(100*k-70*n);if(!best||d<best.d||(d===best.d&&k>best.k))best={k,d}}return best.k}
+  for(let k=1;k<=n;k++){const d=Math.abs(100*k-70*n);if(!best||d<best.d)best={k,d}}return best.k}
 const roundLabel=(r,R)=>R&&R.kind==="departage"?`Tour ${r} — départage ${R.post}`:`tour ${r}`;
 function flash(msg,err){const f=document.getElementById("flash");f.innerHTML=`<div class="flash ${err?"err":""}" role="status">${esc(msg)}</div>`;clearTimeout(flash.t);flash.t=setTimeout(()=>f.innerHTML="",3800)}
 const errMsg=e=>e&&e.code==="permission-denied"?"accès refusé (vote fermé, code invalide ou droits insuffisants)":(e&&(e.message||e.code))||String(e);
@@ -298,7 +298,7 @@ function phaseBanner(c){let [t,s]=PHASES[c.phase]||PHASES.preparation;
   const tour=inRound?(c.departage?` · Tour ${c.round} — départage ${esc(c.departage.post)}`:` · tour ${c.round}`):"";
   return `<div class="phase ${c.phase}"><span class="dot"></span><div><strong>${t}${tour}</strong><br><span class="sub">${s}</span></div></div>`}
 /* Photos des personnes pouvant être élues : photos/<prénom sans accent>.jpg. Sans photo, médaillon aux initiales. */
-const PHOTOS=["catherine","cedric","jean","jean-francois","jonas","julian","loic","marvin","renaud","simon"];
+const PHOTOS=["arnaud","catherine","cedric","didier","jean","jean-francois","jonas","julian","loic","marvin","renaud","simon"];
 const slug=n=>String(n).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
 const initials=n=>String(n).split(/[\s-]+/).filter(Boolean).map(w=>w[0].toUpperCase()).slice(0,2).join("");
 function avatar(n,cls){const k=slug(n);
