@@ -206,7 +206,7 @@ const normCode=s=>String(s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const params=new URLSearchParams(location.search);
 const ADMIN_MODE=params.has("admin");
-const CODE_KEY="wuts-demo-code";
+const CODE_KEY="wuts-demo-code-2026b";
 const baseUrl=()=>location.origin+location.pathname;
 
 const $app=document.getElementById("app");
@@ -681,7 +681,7 @@ function start(fb){
    Imite le sous-ensemble de Firebase utilisé plus haut, avec une base gardée dans le localStorage :
    la vue votant (demo/) et la vue administrateur (demo/?admin) restent synchronisées d'un onglet à l'autre
    du même navigateur. */
-const DEMO_KEY="wuts-demo-db";
+const DEMO_KEY="wuts-demo-db-2026b";
 let demoStore=null;const demoSubs=new Set();
 function demoLoad(){try{demoStore=JSON.parse(localStorage.getItem(DEMO_KEY)||"null")}catch(e){demoStore=null}
   if(!demoStore||!demoStore.tokens){demoStore={tokens:{}};const set=new Set();while(set.size<DEFAULTS.nCodes)set.add(genCode());
