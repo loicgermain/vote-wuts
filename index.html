@@ -540,9 +540,15 @@ function adminHTML(c){
 }
 
 /* ---------- rendu ---------- */
+/* Paramètres saisis mais pas encore enregistrés : conservés d'un rendu à l'autre (sinon le 1er clic d'un bouton
+   à confirmer, ou une mise à jour de la base, les remettrait aux valeurs enregistrées). Oubliés au changement de phase. */
+const P_IDS=["p-nv","p-th","p-nc","p-elig","p-posts"];let pDraft={},pDraftKey=null;
 function render(){
   const keep=[...$app.querySelectorAll(".scroll")].map(x=>x.scrollLeft);const y=window.scrollY;
   render0();
+  const pk=loadedCfg?C().phase+"|"+C().round:null;if(pk!==pDraftKey){pDraft={};pDraftKey=pk}
+  let restored=false;for(const id in pDraft){const el=document.getElementById(id);if(el&&!el.disabled){el.value=pDraft[id];restored=true}}
+  if(restored){const pe=document.getElementById("p-elig");if(pe)pe.dataset.n=pe.value.split("\n").filter(l=>l.trim()).length;refreshParams()}
   [...$app.querySelectorAll(".scroll")].forEach((x,i)=>{if(keep[i])x.scrollLeft=keep[i]});
   if(Math.abs(window.scrollY-y)>2)window.scrollTo(0,y);
 }
@@ -641,8 +647,8 @@ const ACTIONS={
     if(!(raw>=1&&raw<=nv)){flash(`Le seuil doit être compris entre 1 et ${nv} voix.`,true);return}
     const patch={seuil:raw,nVoters:nv};
     if(prep){patch.eligible=lines("p-elig");patch.posts=lines("p-posts");patch.openPosts=patch.posts.filter(p=>!c.elected[p])}
-    act(()=>setCfg(patch),prep?"Paramètres enregistrés":"Présents et seuil enregistrés")},
-  reset:()=>{if(!armed("reset"))return;act(async()=>{await deleteCol("ballots");await FB.deleteDoc(resultsRef());await FB.deleteDoc(cfgRef());attrib=null;dec=null;adminBallotsKey=null},"Élection réinitialisée")}
+    act(async()=>{await setCfg(patch);pDraft={}},prep?"Paramètres enregistrés":"Présents et seuil enregistrés")},
+  reset:()=>{if(!armed("reset"))return;act(async()=>{pDraft={};await deleteCol("ballots");await FB.deleteDoc(resultsRef());await FB.deleteDoc(cfgRef());attrib=null;dec=null;adminBallotsKey=null},"Élection réinitialisée")}
 };
 async function loadTokens(){const q=await FB.getDocs(FB.collection(db,"tokens"));tokens=q.docs.map(d=>d.id).sort()}
 
@@ -660,12 +666,14 @@ function syncVoters(t){const g=id=>document.getElementById(id),nvEl=g("p-nv");if
   const n=t.value.split("\n").filter(l=>l.trim()).length,prev=+(t.dataset.n||C().eligible.length);t.dataset.n=n;
   const ov=parseInt(nvEl.value,10)||C().nVoters,nv=Math.max(1,ov+n-prev);if(nv===ov)return;nvEl.value=nv;
   const th=g("p-th");if(th&&parseInt(th.value,10)===suggestSeuil(ov))th.value=suggestSeuil(nv);
-  const nc=g("p-nc");if(nc&&!nc.disabled&&parseInt(nc.value,10)===ov)nc.value=nv}
-document.addEventListener("input",e=>{const id=e.target.id;if(id==="p-elig")syncVoters(e.target);else if(id!=="p-th"&&id!=="p-nv")return;
+  const nc=g("p-nc");if(nc&&!nc.disabled){const x=parseInt(nc.value,10);if(!(x>=nv)||x===ov)nc.value=nv}}
+document.addEventListener("input",e=>{const id=e.target.id;if(!P_IDS.includes(id))return;if(id==="p-elig")syncVoters(e.target);
+  P_IDS.forEach(k=>{const el=document.getElementById(k);if(el&&!el.disabled)pDraft[k]=el.value});refreshParams()});
+function refreshParams(){
   const nv=parseInt((document.getElementById("p-nv")||{}).value,10)||C().nVoters;const s=parseInt((document.getElementById("p-th")||{}).value,10);
   const a=document.getElementById("p-pct");if(a)a.textContent=`soit ${s>0?pct(s,nv):"–"} de ${nv} votants (indicatif)`;
   const b=document.getElementById("p-sug");const k=suggestSeuil(nv);
-  if(b&&k)b.innerHTML=`Seuil suggéré par la règle du cadre (70 % ± 3 %, sinon le plus proche de 70 %) pour ${nv} présents : <b>${k}</b> voix (${pct(k,nv)}). L'administrateur décide.`});
+  if(b&&k)b.innerHTML=`Seuil suggéré par la règle du cadre (70 % ± 3 %, sinon le plus proche de 70 %) pour ${nv} présents : <b>${k}</b> voix (${pct(k,nv)}). L'administrateur décide.`}
 document.addEventListener("toggle",e=>{const k=e.target.dataset&&e.target.dataset.keep;if(k)uiOpen[k]=e.target.open},true);
 document.addEventListener("change",e=>{const t=e.target;
   if(t.dataset.refus!==undefined){const c=C();if(c.phase!=="preparation"&&(c.phase!=="attribue"||t.checked)){render();return}const r={...c.refus};const s=new Set(r[t.dataset.refus]||[]);if(t.checked)s.add(t.dataset.post);else s.delete(t.dataset.post);r[t.dataset.refus]=[...s];act(()=>setCfg({refus:r}),"Refus enregistré")}
