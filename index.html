@@ -654,7 +654,14 @@ document.addEventListener("click",e=>{
   const f=ACTIONS[t.dataset.act];if(f)f(t);
 });
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="codein")ACTIONS.usecode();if(e.key==="Enter"&&e.target.id==="lg-pw")ACTIONS.login()});
-document.addEventListener("input",e=>{const id=e.target.id;if(id!=="p-th"&&id!=="p-nv")return;
+/* Ajout ou retrait d'un éligible : les présents suivent (l'écart, p. ex. la direction, est conservé), comme les codes
+   et le seuil tant qu'ils n'ont pas été réglés autrement. */
+function syncVoters(t){const g=id=>document.getElementById(id),nvEl=g("p-nv");if(!nvEl)return;
+  const n=t.value.split("\n").filter(l=>l.trim()).length,prev=+(t.dataset.n||C().eligible.length);t.dataset.n=n;
+  const ov=parseInt(nvEl.value,10)||C().nVoters,nv=Math.max(1,ov+n-prev);if(nv===ov)return;nvEl.value=nv;
+  const th=g("p-th");if(th&&parseInt(th.value,10)===suggestSeuil(ov))th.value=suggestSeuil(nv);
+  const nc=g("p-nc");if(nc&&!nc.disabled&&parseInt(nc.value,10)===ov)nc.value=nv}
+document.addEventListener("input",e=>{const id=e.target.id;if(id==="p-elig")syncVoters(e.target);else if(id!=="p-th"&&id!=="p-nv")return;
   const nv=parseInt((document.getElementById("p-nv")||{}).value,10)||C().nVoters;const s=parseInt((document.getElementById("p-th")||{}).value,10);
   const a=document.getElementById("p-pct");if(a)a.textContent=`soit ${s>0?pct(s,nv):"–"} de ${nv} votants (indicatif)`;
   const b=document.getElementById("p-sug");const k=suggestSeuil(nv);
