@@ -187,7 +187,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 /* Version de démonstration, indépendante de l'application réelle : aucune connexion à Firebase.
    Les données vivent dans le localStorage du navigateur et les bulletins des autres présents sont simulés. */
 
-const DEFAULTS={phase:"preparation",round:1,seuil:10,nVoters:15,nCodes:15,maxTicks:3,
+const DEFAULTS={phase:"preparation",round:1,seuil:10,nVoters:15,nCodes:15,maxTicks:3,prefsDeadline:null,
   eligible:["Renaud","Jean","Marvin","Catherine","Jonas","Jean-François","Julian","Simon","Yannick","Cédric","Didier","Arnaud","Loïc"],
   posts:["Projets E","Projets M","Administratif","Terrain","Coordination"],
   openPosts:null,elected:{},refus:{},consent:{},departage:null};
@@ -200,6 +200,8 @@ const PHASES={
   termine:["Élection terminée","Les pôles ont leur responsable pour trois ans."]
 };
 const REVELE_DEPARTAGE="Tour de départage : le poste revient à la personne ayant le plus de voix, si elle l'accepte.";
+/* Démo : la date limite tombe une semaine après la première ouverture */
+const PREFS_DEADLINE=Math.ceil((Date.now()+7*864e5)/36e5)*36e5;
 const ALPH="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const genCode=()=>{const a=new Uint32Array(8);crypto.getRandomValues(a);return [...a].map(x=>ALPH[x%32]).join("")};
 const fmtCode=c=>c.slice(0,4)+"-"+c.slice(4);
@@ -207,6 +209,9 @@ const normCode=s=>String(s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const params=new URLSearchParams(location.search);
 const ADMIN_MODE=params.has("admin");
+/* Lien personnel de refus d'office (?r=…) : 16 caractères tirés au hasard (80 bits), sans aucun rapport avec le nom
+   ni avec les codes de vote. Le nom n'est enregistré que dans la fiche, côté base. */
+const PREF_KEY=ADMIN_MODE?null:(normCode(params.get("r"))||null);
 const CODE_KEY="wuts-demo-code-2026b";
 const baseUrl=()=>location.origin+location.pathname;
 
@@ -215,15 +220,22 @@ let FB=null,db=null,auth=null;
 let cfg=null,results=null,loadedCfg=false,fatal=null;
 let code=null,codeValid=null,myBallot=null,ballotUnsub=null,ballotSubKey=null;
 let adminUser=null,adminBallots=[],adminBallotsKey=null,adminBallotsUnsub=null,tokens=[];
+let prefs=[],prefsUnsub=null,prefDoc=null,prefState=null,prefDraft=null;
 let draft=null,attrib=null,dec=null,showPreview=false,busy=false,confirmKey=null,pending=false,loginErr="",cs={post:"",name:"",ask:false},uiOpen={};
 
 function C(){const c={...DEFAULTS,...(cfg||{})};delete c.threshold;delete c.base;
   c.elected=c.elected||{};c.refus=c.refus||{};c.consent=c.consent||{};
   if(!Number.isFinite(c.seuil))c.seuil=DEFAULTS.seuil;
+  if(!Number.isFinite(c.prefsDeadline))c.prefsDeadline=PREFS_DEADLINE;
   if(!c.openPosts)c.openPosts=c.posts.filter(p=>!c.elected[p]);return c}
 const electedNames=c=>Object.values(c.elected);
 const candidates=c=>{const el=electedNames(c);return (c.departage?c.departage.cands:c.eligible).filter(n=>!el.includes(n))};
 const refused=(c,n,p)=>(c.refus[n]||[]).includes(p);
+const genSecret=()=>{const a=new Uint32Array(16);crypto.getRandomValues(a);return [...a].map(x=>ALPH[x%32]).join("")};
+const prefUrl=k=>baseUrl()+"?r="+k;
+const fmtWhen=ms=>new Date(ms).toLocaleString("fr-BE",{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"});
+const toLocalInput=ms=>new Date(ms-new Date(ms).getTimezoneOffset()*6e4).toISOString().slice(0,16);
+const prefsOpen=c=>Date.now()<c.prefsDeadline;
 const pct=(s,n)=>n>0?(100*s/n).toFixed(1).replace(".",",")+" %":"–";
 /* Règle du cadre : part des voix dans 70 % ± 3 % ; à défaut, la plus proche de 70 %.
    La plus proche de 70 % est forcément dans la fourchette quand une valeur y tombe. Égalité d'écart : la valeur basse. */
@@ -403,6 +415,35 @@ function refreshBallot(){const c=C(),cands=candidates(c),miss=missingPosts(c);
   const b=document.getElementById("submit-btn");if(b)b.disabled=busy||miss.length>0||(saved&&!draft.dirty);
   const nt=document.getElementById("n-ticks");if(nt)nt.textContent=Object.values(draft.ticks).reduce((a,x)=>a+x.length,0)+" case(s) cochée(s)";
   const ok=document.querySelector(".note.ok");if(ok&&saved)ok.textContent="Votre bulletin est dans l'urne."+(draft.dirty?" Vous avez des modifications non validées.":" Vous pouvez encore le modifier jusqu'à la clôture.");}
+/* ---------- page personnelle de refus d'office ---------- */
+function prefHTML(c){
+  if(prefState===null)return `<p class="sub">Chargement…</p>`;
+  if(prefState==="invalid")return `<section class="block"><h2>Lien invalide</h2><p class="sub">Ce lien personnel n'existe pas ou a été remplacé. Demandez votre lien à l'administrateur.</p></section>`;
+  const d=prefDoc,open=prefsOpen(c),posts=d.posts||[];if(!prefDraft)prefDraft=[...posts];
+  const status=d.answered?`<div class="note ok">Réponse enregistrée${d.at?" le "+esc(fmtWhen(d.at)):""} : ${posts.length?"vous refusez "+posts.map(esc).join(", "):"vous ne refusez aucun poste"}.</div>`:`<div class="note">Vous n'avez pas encore répondu.</div>`;
+  return `<section class="block"><h2>Refus d'office · ${esc(d.name)}</h2>
+    <p class="sub">Avant le vote, vous pouvez indiquer les postes que vous refusez absolument, sans avoir à vous justifier. Sur les bulletins, les cases correspondantes seront grisées : personne ne pourra vous cocher pour ces postes. Si vous acceptez d'être proposé(e) à tous les postes, ne cochez rien et enregistrez.</p>
+    <p class="sub"><b>${open?`Modifiable jusqu'au ${esc(fmtWhen(c.prefsDeadline))}.`:`Clôturé depuis le ${esc(fmtWhen(c.prefsDeadline))}. Pour tout changement, adressez-vous à l'administrateur.`}</b></p>
+    ${status}
+    <h3>Je refuse d'office :</h3>
+    <div class="picks">${c.posts.map(p=>`<button class="pick" data-pref="${esc(p)}" aria-pressed="${prefDraft.includes(p)}" ${open&&!busy?"":"disabled"}>${esc(p)}</button>`).join("")}</div>
+    ${open?`<div class="row" style="margin-top:14px"><button class="btn primary" data-act="savepref" ${busy?"disabled":""}>${prefDraft.length?`Enregistrer : je refuse ${prefDraft.length} poste(s)`:"Enregistrer : je ne refuse aucun poste"}</button></div>`:""}
+    <p class="sub" style="margin-top:12px">Ce lien est personnel : ne le transmettez pas.</p></section>`}
+function prefsAdminHTML(c){
+  const has=new Set(prefs.map(p=>p.name)),miss=c.eligible.filter(n=>!has.has(n));
+  const list=[...prefs].sort((a,b)=>{const i=c.eligible.indexOf(a.name),j=c.eligible.indexOf(b.name);return (i<0?999:i)-(j<0?999:j)||a.name.localeCompare(b.name,"fr")});
+  const nAns=list.filter(p=>p.answered&&c.eligible.includes(p.name)).length;
+  const b=(a,l,k="",cls="")=>`<button class="btn ${cls}${confirmKey===a+k?" armed":""}" data-act="${a}" data-k="${esc(k)}" ${busy?"disabled":""}>${confirmKey===a+k?"Confirmer ?":l}</button>`;
+  const rows=list.map(p=>{const el=c.eligible.includes(p.name);
+    return `<tr><th>${esc(p.name)}${el?"":`<br><small class="sub">n'est plus éligible</small>`}</th>
+      <td>${p.answered?((p.posts||[]).length?"Refuse : "+p.posts.map(esc).join(", "):"Aucun refus")+(p.at?`<br><small class="sub">${esc(fmtWhen(p.at))}</small>`:""):`<span class="sub">Pas encore répondu</span>`}</td>
+      <td><div class="row" style="gap:6px;flex-wrap:nowrap">${b("copypref","Copier le lien",p.id)}${el?b("regenpref","Nouveau lien",p.id):b("delpref","Supprimer",p.id)}</div></td></tr>`}).join("");
+  return `<h3>Refus d'office à distance</h3>
+    <p class="sub">Chaque personne pouvant être élue reçoit un lien personnel, tiré au hasard, pour indiquer elle-même ses refus d'office jusqu'à la date limite. Le jour du vote, reprenez les réponses dans le tableau ci-dessus ; il reste modifiable ensuite. « Nouveau lien » invalide l'ancien (lien perdu ou transmis) et garde la réponse.</p>
+    <div class="row" style="margin:8px 0"><label class="row" style="gap:6px">Date limite <input id="p-dl" type="datetime-local" value="${toLocalInput(c.prefsDeadline)}"></label>${b("savedl","Enregistrer la date limite")}
+      <span class="sub">${prefsOpen(c)?"Ouvert":"Clôturé"} · ${nAns} / ${c.eligible.length} réponse(s)</span></div>
+    ${list.length?`<div class="scroll"><table><thead><tr><th>Personne</th><th>Réponse</th><th>Lien personnel</th></tr></thead><tbody>${rows}</tbody></table></div>`:""}
+    <div class="row" style="margin-top:10px">${miss.length?b("genprefs",`Créer les liens (${miss.length})`,"","primary"):""}${list.length?b("copyprefs","Copier tous les liens"):""}${nAns?b("importprefs",`Reprendre les réponses dans les refus d'office (${nAns})`):""}</div>`}
 function voterHTML(c){
   let main="";
   if(c.phase==="vote")main=(!code||codeValid!==true)?(codeValid===null&&code?`<p class="sub">Vérification du code…</p>`:codeHTML()):ballotHTML(c);
@@ -530,6 +571,7 @@ function adminHTML(c){
     <div class="row"><label class="row" style="gap:6px">Codes à générer <input id="p-nc" type="number" min="1" max="200" value="${c.nCodes}" style="width:70px" ${prep?"":"disabled"}></label>${btn("gencodes",tokens.length?"Régénérer les codes":"Générer les codes","",!prep)}${btn("print","Imprimer les bulletins d'accès","",!tokens.length)}</div>
     ${prep&&tokens.length?`<p class="sub" style="margin-top:6px">Régénérer invalide les codes déjà imprimés.</p>`:""}
     <h3>Refus d'office</h3><p class="sub">${prep?"Cochez les postes que chaque personne refuse avant le vote. Enregistré immédiatement.":c.phase==="attribue"?"Les refus exprimés en séance y sont ajoutés. Entre deux tours, décochez un refus si la personne revient sur sa décision ; verrouillé à l'ouverture du tour.":"Verrouillé pendant le tour. Les refus exprimés en séance y sont ajoutés à la publication de l'attribution."}</p>${refusGrid}
+    ${prep?prefsAdminHTML(c):""}
     <h3>Paramètres</h3>
     <div class="row" style="margin-bottom:10px"><label class="row" style="gap:6px">Votants attendus (présents) <input id="p-nv" type="number" min="1" max="200" value="${c.nVoters}" style="width:70px" ${seuilEditable?"":"disabled"}></label></div>
     ${c.phase==="attribue"?`<p class="sub" style="margin-top:-4px">Entre deux tours : ajustez si besoin le nombre de présents (en cas de départ), le seuil et le maximum de personnes cochées par poste. Les codes ne changent pas.</p>`:""}
@@ -548,7 +590,7 @@ function adminHTML(c){
 /* ---------- rendu ---------- */
 /* Paramètres saisis mais pas encore enregistrés : conservés d'un rendu à l'autre (sinon le 1er clic d'un bouton
    à confirmer, ou une mise à jour de la base, les remettrait aux valeurs enregistrées). Oubliés au changement de phase. */
-const P_IDS=["p-nv","p-th","p-nc","p-mx","p-elig","p-posts"];let pDraft={},pDraftKey=null;
+const P_IDS=["p-dl","p-nv","p-th","p-nc","p-mx","p-elig","p-posts"];let pDraft={},pDraftKey=null;
 function render(){
   const keep=[...$app.querySelectorAll(".scroll")].map(x=>x.scrollLeft);const y=window.scrollY;
   render0();
@@ -562,6 +604,7 @@ function render0(){
   if(fatal){$app.innerHTML=`<div class="note err">${fatal}</div>`;return}
   if(!loadedCfg){$app.innerHTML=`<p class="sub">Connexion à l'élection…</p>`;return}
   const c=C();const bar=demoBarHTML(c);
+  if(PREF_KEY){$app.innerHTML=bar+prefHTML(c);return}
   if(ADMIN_MODE){
     if(!adminUser){$app.innerHTML=bar+loginHTML()+phaseBanner(c);return}
     syncAdmin(c);
@@ -601,7 +644,27 @@ function consentAttrib(c,p,n){
   cs={post:"",name:"",ask:false};
   act(()=>setCfg(patch),`${p} attribué par consentement`)}
 
-const ACTIONS={
+const prefById=id=>prefs.find(p=>p.id===id);
+function copyText(s,ok){(navigator.clipboard?navigator.clipboard.writeText(s):Promise.reject()).then(()=>flash(ok),()=>{window.prompt("Copiez :",s)})}
+const PREF_ACTIONS={
+  savepref:()=>{const c=C();if(!prefsOpen(c)){flash("La date limite est passée.",true);render();return}
+    const posts=c.posts.filter(p=>prefDraft.includes(p));
+    act(()=>FB.setDoc(FB.doc(db,"prefs",PREF_KEY),{...prefDoc,posts,answered:true,at:Date.now()}),"Réponse enregistrée")},
+  savedl:()=>{const v=(document.getElementById("p-dl")||{}).value;const ms=v?new Date(v).getTime():NaN;
+    if(!Number.isFinite(ms)){flash("Date limite invalide.",true);return}delete pDraft["p-dl"];act(()=>setCfg({prefsDeadline:ms}),"Date limite enregistrée")},
+  genprefs:()=>{const c=C();const has=new Set(prefs.map(p=>p.name));const miss=c.eligible.filter(n=>!has.has(n));if(!miss.length)return;
+    act(async()=>{const b=FB.writeBatch(db);miss.forEach(n=>b.set(FB.doc(db,"prefs",genSecret()),{name:n,posts:[],answered:false,at:null}));await b.commit();
+      if(!cfg||!Number.isFinite(cfg.prefsDeadline))await setCfg({prefsDeadline:c.prefsDeadline})},`${miss.length} lien(s) créé(s)`)},
+  copypref:t=>{const p=prefById(t.dataset.k);if(p)copyText(prefUrl(p.id),`Lien de ${p.name} copié`)},
+  copyprefs:()=>{const c=C();copyText([...prefs].filter(p=>c.eligible.includes(p.name)).sort((a,b)=>c.eligible.indexOf(a.name)-c.eligible.indexOf(b.name)).map(p=>`${p.name} : ${prefUrl(p.id)}`).join("\n"),"Liens copiés")},
+  regenpref:t=>{const p=prefById(t.dataset.k);if(!p||!armed("regenpref"+p.id))return;const{id,...d}=p;
+    act(async()=>{const b=FB.writeBatch(db);b.set(FB.doc(db,"prefs",genSecret()),d);b.delete(FB.doc(db,"prefs",id));await b.commit()},`Nouveau lien pour ${p.name} : l'ancien ne fonctionne plus`)},
+  delpref:t=>{const p=prefById(t.dataset.k);if(!p||!armed("delpref"+p.id))return;act(()=>FB.deleteDoc(FB.doc(db,"prefs",p.id)),"Lien supprimé")},
+  importprefs:()=>{const c=C();if(!armed("importprefs"))return;const refus={...c.refus};let n=0;
+    prefs.forEach(p=>{if(p.answered&&c.eligible.includes(p.name)){refus[p.name]=c.posts.filter(x=>(p.posts||[]).includes(x));n++}});
+    act(()=>setCfg({refus}),`${n} réponse(s) reprise(s) dans les refus d'office`)},
+};
+const ACTIONS={...PREF_ACTIONS,
   usecode:()=>{const v=normCode(document.getElementById("codein").value);if(v.length!==8){flash("Le code compte 8 caractères.",true);return}code=v;draft=null;checkCode(v)},
   forget:()=>{code=null;codeValid=null;draft=null;try{localStorage.removeItem(CODE_KEY)}catch(e){}history.replaceState(null,"",baseUrl());render()},
   submit:()=>{const c=C();if(missingPosts(c).length){flash("Cochez au moins une personne par poste.",true);return}
@@ -664,7 +727,8 @@ const ACTIONS={
 async function loadTokens(){const q=await FB.getDocs(FB.collection(db,"tokens"));tokens=q.docs.map(d=>d.id).sort()}
 
 document.addEventListener("click",e=>{
-  const t=e.target.closest("[data-act],[data-tick]");if(!t||t.disabled)return;
+  const t=e.target.closest("[data-act],[data-tick],[data-pref]");if(!t||t.disabled)return;
+  if(t.dataset.pref){const p=t.dataset.pref;prefDraft=prefDraft.includes(p)?prefDraft.filter(x=>x!==p):[...prefDraft,p];render();return}
   if(t.tagName==="A")e.preventDefault();
   if(t.dataset.tick){const a=draft.ticks[t.dataset.tick];const i=a.indexOf(t.dataset.cand);if(i>=0)a.splice(i,1);else a.push(t.dataset.cand);draft.dirty=true;
     t.setAttribute("aria-pressed",i<0?"true":"false");refreshBallot();return}
@@ -701,7 +765,9 @@ function start(fb){
   const app=FB.initializeApp();db=FB.getFirestore(app);auth=FB.getAuth(app);
   FB.onSnapshot(cfgRef(),s=>{cfg=s.exists()?s.data():null;loadedCfg=true;schedule()},e=>{fatal="Impossible de joindre l'élection : "+esc(errMsg(e));render()});
   FB.onSnapshot(resultsRef(),s=>{results=s.exists()?s.data():null;schedule()},()=>{});
-  if(ADMIN_MODE)FB.onAuthStateChanged(auth,async u=>{adminUser=u;adminBallotsKey=null;if(u){try{await loadTokens()}catch(e){flash("Ce compte n'a pas les droits d'administration.",true)}}render()});
+  if(ADMIN_MODE)FB.onAuthStateChanged(auth,async u=>{adminUser=u;adminBallotsKey=null;if(u){try{await loadTokens()}catch(e){flash("Ce compte n'a pas les droits d'administration.",true)}
+    if(u&&!prefsUnsub)prefsUnsub=FB.onSnapshot(FB.collection(db,"prefs"),q=>{prefs=q.docs.map(d=>({id:d.id,...d.data()}));schedule()},e=>console.error(e));}render()});
+  else if(PREF_KEY)FB.onSnapshot(FB.doc(db,"prefs",PREF_KEY),s=>{prefDoc=s.exists()?s.data():null;prefState=prefDoc?"ok":"invalid";schedule()},()=>{prefState="invalid";render()});
   else{let c0=normCode(params.get("c"));if(!c0){try{c0=normCode(localStorage.getItem(CODE_KEY))}catch(e){}}
     if(!c0)c0=demoCode();
     if(c0&&c0.length===8){code=c0;checkCode(c0)}
@@ -774,7 +840,7 @@ function demoFill(all){if(C().phase!=="vote")return;demoMut(()=>{const c=C();
 function demoBots(){setTimeout(()=>{if(loadedCfg)demoFill(false);demoBots()},350+Math.random()*700)}
 function demoBarHTML(c){
   const other=ADMIN_MODE?`<a href="${esc(baseUrl())}" target="_blank" rel="noopener">Vue votant ↗</a>`:`<a href="${esc(baseUrl())}?admin" target="_blank" rel="noopener">Vue administrateur ↗</a>`;
-  let msg=ADMIN_MODE?"Données fictives, gardées dans ce navigateur. Pendant le vote, les bulletins des autres présents arrivent tout seuls.":"Données fictives, gardées dans ce navigateur. Le vote s'ouvre depuis la vue administrateur.";
+  let msg=ADMIN_MODE?"Données fictives, gardées dans ce navigateur. Pendant le vote, les bulletins des autres présents arrivent tout seuls.":PREF_KEY?"Page personnelle de refus d'office, telle que la reçoit chaque personne pouvant être élue. Les réponses apparaissent dans la vue administrateur.":"Données fictives, gardées dans ce navigateur. Le vote s'ouvre depuis la vue administrateur.";
   let fill="";
   if(ADMIN_MODE&&c.phase==="vote"){const mine=demoCode();const n=Object.values(demoStore.ballots||{}).filter(b=>b.round===c.round).length;
     const meDone=Object.values(demoStore.ballots||{}).some(b=>b.round===c.round&&b.code===mine);
