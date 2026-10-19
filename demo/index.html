@@ -251,9 +251,18 @@ Bonne journée,
 `}
 const recapMail=c=>"mailto:"+prefs.filter(p=>p.email&&c.eligible.includes(p.name)).map(p=>encodeURIComponent(p.email)).join(",")
   +"?subject="+encodeURIComponent("Élection des pôles WUTS : récapitulatif des refus d'office")+"&body="+encodeURIComponent(prefRecap(c));
-/* Mail d'envoi du lien personnel (ouvert dans la messagerie de l'administrateur, modifiable avant envoi) */
-const prefMail=(c,p)=>"mailto:"+encodeURIComponent(p.email||"")+"?subject="+encodeURIComponent("Élection des pôles WUTS : vos refus d'office")
-  +"&body="+encodeURIComponent(`Bonjour ${p.name},
+/* Mail d'envoi du lien personnel (ouvert dans la messagerie de l'administrateur, modifiable avant envoi).
+   Un mailto: ne transporte que du texte brut, où le lien n'est pas cliquable : la version mise en forme est copiée
+   dans le presse-papiers, à coller dans le corps du mail ; le texte brut ne sert que si la copie échoue. */
+const PREF_SUBJECT="Élection des pôles WUTS : vos refus d'office";
+const prefMailHTML=(c,p)=>{const u=esc(prefUrl(p.id));return `<p>Bonjour ${esc(p.name)},</p>
+<p>Avant l'élection des responsables de pôles WUTS du vendredi 13 novembre, chacun peut indiquer les postes qu'il refuse d'office, sans avoir à se justifier. Sur les bulletins, les cases correspondantes seront grisées : personne ne pourra vous cocher pour ces postes.</p>
+<p><b><a href="${u}">Indiquer mes refus d'office</a></b><br>(lien personnel : ${u})</p>
+<p>Vous pouvez répondre et modifier votre réponse jusqu'au ${esc(fmtWhen(c.prefsDeadline))}. Si vous acceptez d'être proposé(e) à tous les postes, ouvrez le lien et enregistrez sans rien cocher.</p>
+<p>Ce lien est personnel : merci de ne pas le transmettre.</p>
+<p>Bonne journée,</p>`};
+const prefMailTo=(p,body)=>"mailto:"+encodeURIComponent(p.email||"")+"?subject="+encodeURIComponent(PREF_SUBJECT)+(body?"&body="+encodeURIComponent(body):"");
+const prefMail=(c,p)=>prefMailTo(p,`Bonjour ${p.name},
 
 Avant l'élection des responsables de pôles WUTS du vendredi 13 novembre, chacun peut indiquer les postes qu'il refuse d'office, sans avoir à se justifier. Sur les bulletins, les cases correspondantes seront grisées : personne ne pourra vous cocher pour ces postes.
 
@@ -266,6 +275,12 @@ Ce lien est personnel : merci de ne pas le transmettre.
 
 Bonne journée,
 `);
+async function openPrefMail(c,p){let copied=false;
+  try{const html=prefMailHTML(c,p),txt=html.replace(/<br>/g,"\n").replace(/<\/p>\s*/g,"\n\n").replace(/<[^>]+>/g,"").replace(/&amp;/g,"&").replace(/&#39;/g,"'").replace(/&quot;/g,'"').trim();
+    await navigator.clipboard.write([new ClipboardItem({"text/html":new Blob([html],{type:"text/html"}),"text/plain":new Blob([txt],{type:"text/plain"})})]);copied=true}catch(e){}
+  location.href=copied?prefMailTo(p,""):prefMail(c,p);
+  if(copied)flash(`Mail de ${p.name} : collez le texte (Ctrl+V) dans le corps du mail.`);
+  try{await FB.setDoc(FB.doc(db,"prefs",p.id),{...noId(p),mailed:Date.now()})}catch(e){console.error(e)}}
 const pct=(s,n)=>n>0?(100*s/n).toFixed(1).replace(".",",")+" %":"–";
 /* Règle du cadre : part des voix dans 70 % ± 3 % ; à défaut, la plus proche de 70 %.
    La plus proche de 70 % est forcément dans la fourchette quand une valeur y tombe. Égalité d'écart : la valeur basse. */
@@ -471,7 +486,7 @@ function prefsAdminHTML(c){
         ${p.mailed?`<br><small class="sub">Mail préparé le ${esc(fmtWhen(p.mailed))}</small>`:""}</td>
       <td><div class="row" style="gap:6px;flex-wrap:nowrap">${p.email?`<a class="btn primary" href="${esc(prefMail(c,p))}" data-mail="${esc(p.id)}">Préparer le mail</a>`:""}${b("copypref","Copier le lien",p.id)}${el?b("regenpref","Nouveau lien",p.id):b("delpref","Supprimer",p.id)}</div></td></tr>`}).join("");
   return `<h3>Refus d'office à distance</h3>
-    <p class="sub">Chaque personne pouvant être élue reçoit un lien personnel, tiré au hasard, pour indiquer elle-même ses refus d'office jusqu'à la date limite. Le jour du vote, reprenez les réponses dans le tableau ci-dessus ; il reste modifiable ensuite. « Préparer le mail » ouvre votre messagerie avec le mail et le lien déjà rédigés : relisez et envoyez. « Nouveau lien » invalide l'ancien (lien perdu ou transmis) et garde la réponse.</p>
+    <p class="sub">Chaque personne pouvant être élue reçoit un lien personnel, tiré au hasard, pour indiquer elle-même ses refus d'office jusqu'à la date limite. Le jour du vote, reprenez les réponses dans le tableau ci-dessus ; il reste modifiable ensuite. « Préparer le mail » ouvre votre messagerie (destinataire et objet remplis) et copie le texte mis en forme, avec un lien cliquable : collez-le (Ctrl+V) dans le corps du mail, relisez et envoyez. « Nouveau lien » invalide l'ancien (lien perdu ou transmis) et garde la réponse.</p>
     <div class="row" style="margin:8px 0"><label class="row" style="gap:6px">Date limite <input id="p-dl" type="datetime-local" value="${toLocalInput(c.prefsDeadline)}"></label>${b("savedl","Enregistrer la date limite")}
       <span class="sub">${prefsOpen(c)?"Ouvert":"Clôturé"} · ${nAns} / ${c.eligible.length} réponse(s)</span></div>
     ${list.length?`<div class="scroll"><table><thead><tr><th>Personne</th><th>Réponse</th><th>E-mail</th><th>Lien personnel</th></tr></thead><tbody>${rows}</tbody></table></div>`:""}
@@ -765,7 +780,7 @@ async function loadTokens(){const q=await FB.getDocs(FB.collection(db,"tokens"))
 
 document.addEventListener("click",e=>{
   const t=e.target.closest("[data-act],[data-tick],[data-pref],[data-mail]");if(!t||t.disabled)return;
-  if(t.dataset.mail){const p=prefById(t.dataset.mail);if(p)FB.setDoc(FB.doc(db,"prefs",p.id),{...noId(p),mailed:Date.now()}).catch(e=>console.error(e));return}
+  if(t.dataset.mail){e.preventDefault();const p=prefById(t.dataset.mail);if(p)openPrefMail(C(),p);return}
   if(t.dataset.pref){const p=t.dataset.pref;prefDraft=prefDraft.includes(p)?prefDraft.filter(x=>x!==p):[...prefDraft,p];render();return}
   if(t.tagName==="A")e.preventDefault();
   if(t.dataset.tick){const a=draft.ticks[t.dataset.tick];const i=a.indexOf(t.dataset.cand);if(i>=0)a.splice(i,1);else a.push(t.dataset.cand);draft.dirty=true;
