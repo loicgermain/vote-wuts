@@ -245,18 +245,48 @@ const fmtWhen=ms=>new Date(ms).toLocaleString("fr-BE",{weekday:"long",day:"numer
 const toLocalInput=ms=>new Date(ms-new Date(ms).getTimezoneOffset()*6e4).toISOString().slice(0,16);
 const prefsOpen=c=>Date.now()<c.prefsDeadline;
 /* Récapitulatif des refus d'office, à envoyer à tous après la date limite */
-function prefRecap(c){const list=c.eligible.map(n=>prefs.find(p=>p.name===n)||{name:n});
-  const line=p=>`- ${p.name} : ${!p.answered?"pas de réponse (aucun refus enregistré)":(p.posts||[]).length?"refuse "+p.posts.join(", "):"aucun refus"}`;
+const recapList=c=>c.eligible.map(n=>prefs.find(p=>p.name===n)||{name:n});
+function prefRecap(c){const list=recapList(c),ans=list.filter(p=>p.answered);
+  const byPost=c.posts.map(p=>{const who=ans.filter(x=>(x.posts||[]).includes(p)).map(x=>x.name);return `• ${p} : ${who.length?who.join(", "):"aucun refus"}`});
+  const none=ans.filter(x=>!(x.posts||[]).length).map(x=>x.name),miss=list.filter(x=>!x.answered).map(x=>x.name);
   return `Bonjour à tous,
 
-Les refus d'office sont clôturés depuis le ${fmtWhen(c.prefsDeadline)}. Voici les choix de chacun :
+Les refus d'office sont clôturés depuis le ${fmtWhen(c.prefsDeadline)}. Voici les choix de chacun (tableau en pièce jointe).
 
-${list.map(line).join("\n")}
+Refus d'office, poste par poste :
+${byPost.join("\n")}
+
+Aucun refus : ${none.length?none.join(", "):"personne"}.${miss.length?`
+Pas de réponse (aucun refus enregistré) : ${miss.join(", ")}.`:""}
 
 Sur les bulletins, les cases correspondantes seront grisées. Conformément au cadre de l'élection, un refus peut encore être signalé à l'administrateur avant l'ouverture du vote.
 
 Bonne journée,
 `}
+/* Tableau des refus d'office en image (PNG), à joindre au mail récapitulatif */
+async function recapPNG(c){try{await document.fonts.ready}catch(e){}
+  const list=recapList(c),S=2,W0=190,CW=128,RH=40,HH=56,top=96,foot=70,W=24+W0+CW*c.posts.length+24,H=top+HH+RH*list.length+foot;
+  const cv=document.createElement("canvas");cv.width=W*S;cv.height=H*S;const g=cv.getContext("2d");g.scale(S,S);
+  const F=(w,s,f="Barlow")=>`${w} ${s}px "${f}",sans-serif`;
+  g.fillStyle="#EEF2F7";g.fillRect(0,0,W,H);g.fillStyle="#FFFFFF";g.fillRect(12,12,W-24,H-24);
+  g.fillStyle="#05F08C";g.fillRect(12,12,6,H-24);
+  g.fillStyle="#00285F";g.font=F(700,24,"Barlow Semi Condensed");g.textBaseline="alphabetic";g.fillText("Élection des pôles WUTS — refus d'office",34,52);
+  g.fillStyle="#58717C";g.font=F(400,15);g.fillText(prefsOpen(c)?`État au ${fmtWhen(Date.now())} (réponses encore modifiables)`:`Réponses clôturées le ${fmtWhen(c.prefsDeadline)}`,34,76);
+  const x0=24;g.textBaseline="middle";
+  g.font=F(600,14,"Barlow Semi Condensed");g.fillStyle="#00285F";
+  c.posts.forEach((p,i)=>{const cx=x0+W0+CW*i+CW/2;g.textAlign="center";
+    const words=p.split(" ");if(g.measureText(p).width>CW-10&&words.length>1){const h=Math.ceil(words.length/2);g.fillText(words.slice(0,h).join(" "),cx,top+HH/2-9);g.fillText(words.slice(h).join(" "),cx,top+HH/2+9)}else g.fillText(p,cx,top+HH/2)});
+  g.textAlign="left";g.strokeStyle="#C7D6D5";g.lineWidth=1;
+  list.forEach((p,r)=>{const y=top+HH+RH*r;
+    g.beginPath();g.moveTo(x0,y+.5);g.lineTo(W-24,y+.5);g.stroke();
+    g.fillStyle="#00285F";g.font=F(600,15);g.fillText(p.name,x0+10,y+RH/2-(p.answered?0:7));
+    if(!p.answered){g.fillStyle="#58717C";g.font=F(400,12);g.fillText("pas de réponse",x0+10,y+RH/2+10)}
+    c.posts.forEach((q,i)=>{const cx=x0+W0+CW*i;
+      if(p.answered&&(p.posts||[]).includes(q)){g.fillStyle="#F2DEDE";g.fillRect(cx+6,y+5,CW-12,RH-10);g.fillStyle="#8A3B3B";g.font=F(600,14);g.textAlign="center";g.fillText("Refuse",cx+CW/2,y+RH/2);g.textAlign="left"}})});
+  const yb=top+HH+RH*list.length;g.beginPath();g.moveTo(x0,yb+.5);g.lineTo(W-24,yb+.5);g.stroke();
+  g.fillStyle="#58717C";g.font=F(400,13);g.textBaseline="alphabetic";
+  g.fillText("« Refuse » : refus d'office, case grisée sur les bulletins pour ce poste. Pas de réponse : aucun refus enregistré.",x0+10,yb+30);
+  return new Promise(res=>cv.toBlob(res,"image/png"))}
 const recapMail=c=>"mailto:"+prefs.filter(p=>p.email&&c.eligible.includes(p.name)).map(p=>encodeURIComponent(p.email)).join(",")
   +"?subject="+encodeURIComponent("Élection des pôles WUTS : récapitulatif des refus d'office")+"&body="+encodeURIComponent(prefRecap(c));
 /* Mail d'envoi du lien personnel (ouvert dans la messagerie de l'administrateur, modifiable avant envoi) */
@@ -487,7 +517,8 @@ function prefsAdminHTML(c){
     <div class="row" style="margin-top:10px">${miss.length?b("genprefs",`Créer les liens (${miss.length})`,"","primary"):""}${list.length?b("copyprefs","Copier tous les liens"):""}${nAns?b("importprefs",`Reprendre les réponses dans les refus d'office (${nAns})`):""}</div>
     ${list.length?`<h3>Récapitulatif à envoyer à tous</h3>
     <p class="sub">${prefsOpen(c)?`<b>La date limite n'est pas encore passée</b> : les réponses peuvent encore changer. À envoyer après le ${esc(fmtWhen(c.prefsDeadline))}.`:"Les réponses sont clôturées."} Le mail liste la réponse de chaque personne et s'adresse à toutes les adresses saisies (${prefs.filter(p=>p.email&&c.eligible.includes(p.name)).length} / ${c.eligible.length}). Ajoutez à la main les autres destinataires, par exemple la direction.</p>
-    <div class="row" style="margin-top:8px"><a class="btn${prefsOpen(c)?"":" primary"}" href="${esc(recapMail(c))}">Préparer le mail récapitulatif</a>${b("copyrecap","Copier le texte")}</div>`:""}</div></details>`}
+    <div class="row" style="margin-top:8px"><a class="btn${prefsOpen(c)?"":" primary"}" href="${esc(recapMail(c))}">Préparer le mail récapitulatif</a>${b("copyrecap","Copier le texte")}${b("dlrecap","Télécharger le tableau (image)")}${b("cprecapimg","Copier le tableau (image)")}</div>
+    <p class="sub" style="margin-top:6px">Le tableau en image se joint au mail (pièce jointe) ou se colle dans le corps du mail.</p>`:""}</div></details>`}
 function voterHTML(c){
   let main="";
   if(c.phase==="vote")main=(!code||codeValid!==true)?(codeValid===null&&code?`<p class="sub">Vérification du code…</p>`:codeHTML()):ballotHTML(c);
@@ -702,6 +733,10 @@ const PREF_ACTIONS={
       if(!cfg||!Number.isFinite(cfg.prefsDeadline))await setCfg({prefsDeadline:c.prefsDeadline})},`${miss.length} lien(s) créé(s)`)},
   copypref:t=>{const p=prefById(t.dataset.k);if(p)copyText(prefUrl(p.id),`Lien de ${p.name} copié`)},
   copyrecap:()=>copyText(prefRecap(C()),"Récapitulatif copié"),
+  dlrecap:async()=>{const bl=await recapPNG(C());const u=URL.createObjectURL(bl),a=document.createElement("a");a.href=u;a.download="refus-office-WUTS.png";
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)},
+  cprecapimg:async()=>{try{await navigator.clipboard.write([new ClipboardItem({"image/png":recapPNG(C())})]);flash("Tableau copié : collez-le (Ctrl+V) dans le mail")}
+    catch(e){flash("Copie impossible sur cet appareil : utilisez « Télécharger le tableau ».",true)}},
   copyprefs:()=>{const c=C();copyText([...prefs].filter(p=>c.eligible.includes(p.name)).sort((a,b)=>c.eligible.indexOf(a.name)-c.eligible.indexOf(b.name)).map(p=>`${p.name} : ${prefUrl(p.id)}`).join("\n"),"Liens copiés")},
   regenpref:t=>{const p=prefById(t.dataset.k);if(!p||!armed("regenpref"+p.id))return;const{id,...d}=p;
     act(async()=>{const b=FB.writeBatch(db);b.set(FB.doc(db,"prefs",genSecret()),d);b.delete(FB.doc(db,"prefs",id));await b.commit()},`Nouveau lien pour ${p.name} : l'ancien ne fonctionne plus`)},
