@@ -470,7 +470,8 @@ function prefsAdminHTML(c){
       <td><input type="email" data-email="${esc(p.id)}" value="${esc(p.email||"")}" placeholder="adresse e-mail" style="min-width:190px;padding:6px 8px;border:1px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink)" ${busy?"disabled":""}>
         ${p.mailed?`<br><small class="sub">Mail préparé le ${esc(fmtWhen(p.mailed))}</small>`:""}</td>
       <td><div class="row" style="gap:6px;flex-wrap:nowrap">${p.email?`<a class="btn primary" href="${esc(prefMail(c,p))}" data-mail="${esc(p.id)}">Préparer le mail</a>`:""}${b("copypref","Copier le lien",p.id)}${el?b("regenpref","Nouveau lien",p.id):b("delpref","Supprimer",p.id)}</div></td></tr>`}).join("");
-  return `<h3>Refus d'office à distance</h3>
+  /* Volet repliable, fermé par défaut après la date limite (pour ne pas encombrer l'écran projeté le jour du vote) */
+  return `<details class="round" data-keep="prefs" ${isOpen("prefs",prefsOpen(c))?"open":""}><summary>Refus d'office à distance <span class="sub">· ${prefsOpen(c)?"ouvert":"clôturé"} · ${nAns} / ${c.eligible.length} réponse(s)</span></summary><div class="body">
     <p class="sub">Chaque personne pouvant être élue reçoit un lien personnel, tiré au hasard, pour indiquer elle-même ses refus d'office jusqu'à la date limite. Le jour du vote, reprenez les réponses dans le tableau ci-dessus ; il reste modifiable ensuite. « Préparer le mail » ouvre votre messagerie avec le mail et le lien déjà rédigés : relisez et envoyez. « Nouveau lien » invalide l'ancien (lien perdu ou transmis) et garde la réponse.</p>
     <div class="row" style="margin:8px 0"><label class="row" style="gap:6px">Date limite <input id="p-dl" type="datetime-local" value="${toLocalInput(c.prefsDeadline)}"></label>${b("savedl","Enregistrer la date limite")}
       <span class="sub">${prefsOpen(c)?"Ouvert":"Clôturé"} · ${nAns} / ${c.eligible.length} réponse(s)</span></div>
@@ -478,7 +479,7 @@ function prefsAdminHTML(c){
     <div class="row" style="margin-top:10px">${miss.length?b("genprefs",`Créer les liens (${miss.length})`,"","primary"):""}${list.length?b("copyprefs","Copier tous les liens"):""}${nAns?b("importprefs",`Reprendre les réponses dans les refus d'office (${nAns})`):""}</div>
     ${list.length?`<h3>Récapitulatif à envoyer à tous</h3>
     <p class="sub">${prefsOpen(c)?`<b>La date limite n'est pas encore passée</b> : les réponses peuvent encore changer. À envoyer après le ${esc(fmtWhen(c.prefsDeadline))}.`:"Les réponses sont clôturées."} Le mail liste la réponse de chaque personne et s'adresse à toutes les adresses saisies (${prefs.filter(p=>p.email&&c.eligible.includes(p.name)).length} / ${c.eligible.length}). Ajoutez à la main les autres destinataires, par exemple la direction.</p>
-    <div class="row" style="margin-top:8px"><a class="btn${prefsOpen(c)?"":" primary"}" href="${esc(recapMail(c))}">Préparer le mail récapitulatif</a>${b("copyrecap","Copier le texte")}</div>`:""}`}
+    <div class="row" style="margin-top:8px"><a class="btn${prefsOpen(c)?"":" primary"}" href="${esc(recapMail(c))}">Préparer le mail récapitulatif</a>${b("copyrecap","Copier le texte")}</div>`:""}</div></details>`}
 function voterHTML(c){
   let main="";
   if(c.phase==="vote")main=(!code||codeValid!==true)?(codeValid===null&&code?`<p class="sub">Vérification du code…</p>`:codeHTML()):ballotHTML(c);
