@@ -236,6 +236,21 @@ const prefUrl=k=>baseUrl()+"?r="+k;
 const fmtWhen=ms=>new Date(ms).toLocaleString("fr-BE",{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"});
 const toLocalInput=ms=>new Date(ms-new Date(ms).getTimezoneOffset()*6e4).toISOString().slice(0,16);
 const prefsOpen=c=>Date.now()<c.prefsDeadline;
+/* Mail d'envoi du lien personnel (ouvert dans la messagerie de l'administrateur, modifiable avant envoi) */
+const prefMail=(c,p)=>"mailto:"+encodeURIComponent(p.email||"")+"?subject="+encodeURIComponent("Élection des pôles WUTS : vos refus d'office")
+  +"&body="+encodeURIComponent(`Bonjour ${p.name},
+
+Avant l'élection des responsables de pôles WUTS du vendredi 13 novembre, chacun peut indiquer les postes qu'il refuse d'office, sans avoir à se justifier. Sur les bulletins, les cases correspondantes seront grisées : personne ne pourra vous cocher pour ces postes.
+
+Votre lien personnel :
+${prefUrl(p.id)}
+
+Vous pouvez répondre et modifier votre réponse jusqu'au ${fmtWhen(c.prefsDeadline)}. Si vous acceptez d'être proposé(e) à tous les postes, ouvrez le lien et enregistrez sans rien cocher.
+
+Ce lien est personnel : merci de ne pas le transmettre.
+
+Bonne journée,
+`);
 const pct=(s,n)=>n>0?(100*s/n).toFixed(1).replace(".",",")+" %":"–";
 /* Règle du cadre : part des voix dans 70 % ± 3 % ; à défaut, la plus proche de 70 %.
    La plus proche de 70 % est forcément dans la fourchette quand une valeur y tombe. Égalité d'écart : la valeur basse. */
@@ -437,12 +452,14 @@ function prefsAdminHTML(c){
   const rows=list.map(p=>{const el=c.eligible.includes(p.name);
     return `<tr><th>${esc(p.name)}${el?"":`<br><small class="sub">n'est plus éligible</small>`}</th>
       <td>${p.answered?((p.posts||[]).length?"Refuse : "+p.posts.map(esc).join(", "):"Aucun refus")+(p.at?`<br><small class="sub">${esc(fmtWhen(p.at))}</small>`:""):`<span class="sub">Pas encore répondu</span>`}</td>
-      <td><div class="row" style="gap:6px;flex-wrap:nowrap">${b("copypref","Copier le lien",p.id)}${el?b("regenpref","Nouveau lien",p.id):b("delpref","Supprimer",p.id)}</div></td></tr>`}).join("");
+      <td><input type="email" data-email="${esc(p.id)}" value="${esc(p.email||"")}" placeholder="adresse e-mail" style="min-width:190px;padding:6px 8px;border:1px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink)" ${busy?"disabled":""}>
+        ${p.mailed?`<br><small class="sub">Mail préparé le ${esc(fmtWhen(p.mailed))}</small>`:""}</td>
+      <td><div class="row" style="gap:6px;flex-wrap:nowrap">${p.email?`<a class="btn primary" href="${esc(prefMail(c,p))}" data-mail="${esc(p.id)}">Préparer le mail</a>`:""}${b("copypref","Copier le lien",p.id)}${el?b("regenpref","Nouveau lien",p.id):b("delpref","Supprimer",p.id)}</div></td></tr>`}).join("");
   return `<h3>Refus d'office à distance</h3>
-    <p class="sub">Chaque personne pouvant être élue reçoit un lien personnel, tiré au hasard, pour indiquer elle-même ses refus d'office jusqu'à la date limite. Le jour du vote, reprenez les réponses dans le tableau ci-dessus ; il reste modifiable ensuite. « Nouveau lien » invalide l'ancien (lien perdu ou transmis) et garde la réponse.</p>
+    <p class="sub">Chaque personne pouvant être élue reçoit un lien personnel, tiré au hasard, pour indiquer elle-même ses refus d'office jusqu'à la date limite. Le jour du vote, reprenez les réponses dans le tableau ci-dessus ; il reste modifiable ensuite. « Préparer le mail » ouvre votre messagerie avec le mail et le lien déjà rédigés : relisez et envoyez. « Nouveau lien » invalide l'ancien (lien perdu ou transmis) et garde la réponse.</p>
     <div class="row" style="margin:8px 0"><label class="row" style="gap:6px">Date limite <input id="p-dl" type="datetime-local" value="${toLocalInput(c.prefsDeadline)}"></label>${b("savedl","Enregistrer la date limite")}
       <span class="sub">${prefsOpen(c)?"Ouvert":"Clôturé"} · ${nAns} / ${c.eligible.length} réponse(s)</span></div>
-    ${list.length?`<div class="scroll"><table><thead><tr><th>Personne</th><th>Réponse</th><th>Lien personnel</th></tr></thead><tbody>${rows}</tbody></table></div>`:""}
+    ${list.length?`<div class="scroll"><table><thead><tr><th>Personne</th><th>Réponse</th><th>E-mail</th><th>Lien personnel</th></tr></thead><tbody>${rows}</tbody></table></div>`:""}
     <div class="row" style="margin-top:10px">${miss.length?b("genprefs",`Créer les liens (${miss.length})`,"","primary"):""}${list.length?b("copyprefs","Copier tous les liens"):""}${nAns?b("importprefs",`Reprendre les réponses dans les refus d'office (${nAns})`):""}</div>`}
 function voterHTML(c){
   let main="";
@@ -645,6 +662,7 @@ function consentAttrib(c,p,n){
   act(()=>setCfg(patch),`${p} attribué par consentement`)}
 
 const prefById=id=>prefs.find(p=>p.id===id);
+const noId=p=>{const{id,...d}=p;return d};
 function copyText(s,ok){(navigator.clipboard?navigator.clipboard.writeText(s):Promise.reject()).then(()=>flash(ok),()=>{window.prompt("Copiez :",s)})}
 const PREF_ACTIONS={
   savepref:()=>{const c=C();if(!prefsOpen(c)){flash("La date limite est passée.",true);render();return}
@@ -727,7 +745,8 @@ const ACTIONS={...PREF_ACTIONS,
 async function loadTokens(){const q=await FB.getDocs(FB.collection(db,"tokens"));tokens=q.docs.map(d=>d.id).sort()}
 
 document.addEventListener("click",e=>{
-  const t=e.target.closest("[data-act],[data-tick],[data-pref]");if(!t||t.disabled)return;
+  const t=e.target.closest("[data-act],[data-tick],[data-pref],[data-mail]");if(!t||t.disabled)return;
+  if(t.dataset.mail){const p=prefById(t.dataset.mail);if(p)FB.setDoc(FB.doc(db,"prefs",p.id),{...noId(p),mailed:Date.now()}).catch(e=>console.error(e));return}
   if(t.dataset.pref){const p=t.dataset.pref;prefDraft=prefDraft.includes(p)?prefDraft.filter(x=>x!==p):[...prefDraft,p];render();return}
   if(t.tagName==="A")e.preventDefault();
   if(t.dataset.tick){const a=draft.ticks[t.dataset.tick];const i=a.indexOf(t.dataset.cand);if(i>=0)a.splice(i,1);else a.push(t.dataset.cand);draft.dirty=true;
@@ -751,7 +770,10 @@ function refreshParams(){
   if(b&&k)b.innerHTML=`Seuil suggéré par la règle du cadre (70 % ± 3 %, sinon le plus proche de 70 %) pour ${nv} présents : <b>${k}</b> voix (${pct(k,nv)}). L'administrateur décide.`}
 document.addEventListener("toggle",e=>{const k=e.target.dataset&&e.target.dataset.keep;if(k)uiOpen[k]=e.target.open},true);
 document.addEventListener("change",e=>{const t=e.target;
-  if(t.dataset.refus!==undefined){const c=C();if(c.phase!=="preparation"&&(c.phase!=="attribue"||t.checked)){render();return}const r={...c.refus};const s=new Set(r[t.dataset.refus]||[]);if(t.checked)s.add(t.dataset.post);else s.delete(t.dataset.post);r[t.dataset.refus]=[...s];act(()=>setCfg({refus:r}),"Refus enregistré")}
+  if(t.dataset.email!==undefined){const p=prefById(t.dataset.email),v=t.value.trim();if(!p||v===(p.email||""))return;
+    if(v&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){flash("Adresse e-mail invalide.",true);return}
+    act(()=>FB.setDoc(FB.doc(db,"prefs",p.id),{...noId(p),email:v}),`Adresse de ${p.name} enregistrée`)}
+  else if(t.dataset.refus!==undefined){const c=C();if(c.phase!=="preparation"&&(c.phase!=="attribue"||t.checked)){render();return}const r={...c.refus};const s=new Set(r[t.dataset.refus]||[]);if(t.checked)s.add(t.dataset.post);else s.delete(t.dataset.post);r[t.dataset.refus]=[...s];act(()=>setCfg({refus:r}),"Refus enregistré")}
   else if(t.dataset.acc!==undefined){const k=t.dataset.acc+"|"+t.dataset.post;if(t.value==="R")dec.refuse[k]=true;else delete dec.refuse[k];dec.choix={};dec.tie={};dec.cp={};attrib=null;render()}
   else if(t.dataset.choix!==undefined){if(t.value)dec.choix[t.dataset.choix]=t.value;else delete dec.choix[t.dataset.choix];attrib=null;render()}
   else if(t.dataset.tie!==undefined){if(t.value)dec.tie[t.dataset.tie]=t.value;else delete dec.tie[t.dataset.tie];attrib=null;render()}
