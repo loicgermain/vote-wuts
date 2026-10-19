@@ -244,6 +244,21 @@ const prefUrl=k=>baseUrl()+"?r="+k;
 const fmtWhen=ms=>new Date(ms).toLocaleString("fr-BE",{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"});
 const toLocalInput=ms=>new Date(ms-new Date(ms).getTimezoneOffset()*6e4).toISOString().slice(0,16);
 const prefsOpen=c=>Date.now()<c.prefsDeadline;
+/* Récapitulatif des refus d'office, à envoyer à tous après la date limite */
+function prefRecap(c){const list=c.eligible.map(n=>prefs.find(p=>p.name===n)||{name:n});
+  const line=p=>`- ${p.name} : ${!p.answered?"pas de réponse (aucun refus enregistré)":(p.posts||[]).length?"refuse "+p.posts.join(", "):"aucun refus"}`;
+  return `Bonjour à tous,
+
+Les refus d'office sont clôturés depuis le ${fmtWhen(c.prefsDeadline)}. Voici les choix de chacun :
+
+${list.map(line).join("\n")}
+
+Sur les bulletins, les cases correspondantes seront grisées. Conformément au cadre de l'élection, un refus peut encore être signalé à l'administrateur avant l'ouverture du vote.
+
+Bonne journée,
+`}
+const recapMail=c=>"mailto:"+prefs.filter(p=>p.email&&c.eligible.includes(p.name)).map(p=>encodeURIComponent(p.email)).join(",")
+  +"?subject="+encodeURIComponent("Élection des pôles WUTS : récapitulatif des refus d'office")+"&body="+encodeURIComponent(prefRecap(c));
 /* Mail d'envoi du lien personnel (ouvert dans la messagerie de l'administrateur, modifiable avant envoi) */
 const prefMail=(c,p)=>"mailto:"+encodeURIComponent(p.email||"")+"?subject="+encodeURIComponent("Élection des pôles WUTS : vos refus d'office")
   +"&body="+encodeURIComponent(`Bonjour ${p.name},
@@ -468,7 +483,10 @@ function prefsAdminHTML(c){
     <div class="row" style="margin:8px 0"><label class="row" style="gap:6px">Date limite <input id="p-dl" type="datetime-local" value="${toLocalInput(c.prefsDeadline)}"></label>${b("savedl","Enregistrer la date limite")}
       <span class="sub">${prefsOpen(c)?"Ouvert":"Clôturé"} · ${nAns} / ${c.eligible.length} réponse(s)</span></div>
     ${list.length?`<div class="scroll"><table><thead><tr><th>Personne</th><th>Réponse</th><th>E-mail</th><th>Lien personnel</th></tr></thead><tbody>${rows}</tbody></table></div>`:""}
-    <div class="row" style="margin-top:10px">${miss.length?b("genprefs",`Créer les liens (${miss.length})`,"","primary"):""}${list.length?b("copyprefs","Copier tous les liens"):""}${nAns?b("importprefs",`Reprendre les réponses dans les refus d'office (${nAns})`):""}</div>`}
+    <div class="row" style="margin-top:10px">${miss.length?b("genprefs",`Créer les liens (${miss.length})`,"","primary"):""}${list.length?b("copyprefs","Copier tous les liens"):""}${nAns?b("importprefs",`Reprendre les réponses dans les refus d'office (${nAns})`):""}</div>
+    ${list.length?`<h3>Récapitulatif à envoyer à tous</h3>
+    <p class="sub">${prefsOpen(c)?`<b>La date limite n'est pas encore passée</b> : les réponses peuvent encore changer. À envoyer après le ${esc(fmtWhen(c.prefsDeadline))}.`:"Les réponses sont clôturées."} Le mail liste la réponse de chaque personne et s'adresse à toutes les adresses saisies (${prefs.filter(p=>p.email&&c.eligible.includes(p.name)).length} / ${c.eligible.length}). Ajoutez à la main les autres destinataires, par exemple la direction.</p>
+    <div class="row" style="margin-top:8px"><a class="btn${prefsOpen(c)?"":" primary"}" href="${esc(recapMail(c))}">Préparer le mail récapitulatif</a>${b("copyrecap","Copier le texte")}</div>`:""}`}
 function voterHTML(c){
   let main="";
   if(c.phase==="vote")main=(!code||codeValid!==true)?(codeValid===null&&code?`<p class="sub">Vérification du code…</p>`:codeHTML()):ballotHTML(c);
@@ -682,6 +700,7 @@ const PREF_ACTIONS={
     act(async()=>{const b=FB.writeBatch(db);miss.forEach(n=>b.set(FB.doc(db,"prefs",genSecret()),{name:n,posts:[],answered:false,at:null}));await b.commit();
       if(!cfg||!Number.isFinite(cfg.prefsDeadline))await setCfg({prefsDeadline:c.prefsDeadline})},`${miss.length} lien(s) créé(s)`)},
   copypref:t=>{const p=prefById(t.dataset.k);if(p)copyText(prefUrl(p.id),`Lien de ${p.name} copié`)},
+  copyrecap:()=>copyText(prefRecap(C()),"Récapitulatif copié"),
   copyprefs:()=>{const c=C();copyText([...prefs].filter(p=>c.eligible.includes(p.name)).sort((a,b)=>c.eligible.indexOf(a.name)-c.eligible.indexOf(b.name)).map(p=>`${p.name} : ${prefUrl(p.id)}`).join("\n"),"Liens copiés")},
   regenpref:t=>{const p=prefById(t.dataset.k);if(!p||!armed("regenpref"+p.id))return;const{id,...d}=p;
     act(async()=>{const b=FB.writeBatch(db);b.set(FB.doc(db,"prefs",genSecret()),d);b.delete(FB.doc(db,"prefs",id));await b.commit()},`Nouveau lien pour ${p.name} : l'ancien ne fonctionne plus`)},
