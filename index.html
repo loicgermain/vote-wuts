@@ -668,7 +668,7 @@ function adminHTML(c){
     <div class="grid2" style="grid-template-columns:1fr 1fr;margin-top:12px">
       <label class="f">Éligibles (un par ligne)<textarea id="p-elig" ${prep?"":"disabled"}>${esc(c.eligible.join("\n"))}</textarea></label>
       <label class="f">Postes<textarea id="p-posts" ${prep?"":"disabled"}>${esc(c.posts.join("\n"))}</textarea></label></div>
-    <div class="row" style="margin-top:12px">${btn("savecfg",prep?"Enregistrer les paramètres":"Enregistrer présents, seuil et maximum","",!seuilEditable)}</div>
+    <div class="row" style="margin-top:12px">${btn("savecfg",prep?"Enregistrer les paramètres":"Enregistrer présents, seuil et maximums","",!seuilEditable)}</div>
     <h3>Zone sensible</h3><p class="sub">Efface bulletins, résultats et paramètres. Les codes sont conservés.</p>
     <div class="row">${arm("reset","Réinitialiser l'élection","Confirmer : tout effacer")}</div>${fin?"</details>":""}</section>
     <div id="slips">${tokens.length?slipsHTML():""}</div>`;
@@ -815,7 +815,7 @@ const ACTIONS={...PREF_ACTIONS,
       const mx=parseInt(el.value,10);if(!(mx>=0&&mx<=200)){flash(`Maximum invalide pour ${p}.`,true);return}mbp[p]=mx}
     patch.maxByPost=mbp;
     if(prep){patch.eligible=lines("p-elig");patch.posts=lines("p-posts");patch.openPosts=patch.posts.filter(p=>!c.elected[p])}
-    act(async()=>{await setCfg(patch);pDraft={}},prep?"Paramètres enregistrés":"Présents et seuil enregistrés")},
+    act(async()=>{await setCfg(patch);pDraft={}},prep?"Paramètres enregistrés":"Présents, seuil et maximums enregistrés")},
   reset:()=>{if(!armed("reset"))return;act(async()=>{pDraft={};await deleteCol("ballots");await FB.deleteDoc(resultsRef());await FB.deleteDoc(cfgRef());attrib=null;dec=null;adminBallotsKey=null},"Élection réinitialisée")}
 };
 async function loadTokens(){const q=await FB.getDocs(FB.collection(db,"tokens"));tokens=q.docs.map(d=>d.id).sort()}
