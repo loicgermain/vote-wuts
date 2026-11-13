@@ -452,6 +452,8 @@ const posInt=x=>Math.max(0,parseInt(x,10)||0);
 const maxTicks=(c,p)=>{if(c.departage){const n=c.departage.cands.length;return Math.min(n,Math.max(1,posInt(c.departage.max)||1))}
   const m=c.maxByPost||{};return posInt(p in m?m[p]:c.maxTicks)};
 const nRefus=(c,p)=>c.eligible.filter(n=>refused(c,n,p)).length;
+/* Refus d'office à distance, clôturés, pas encore repris dans la grille des refus (donc ni grisés ni comptés) */
+const pendRefus=(c,p)=>prefsOpen(c)?[]:prefs.filter(x=>x.answered&&c.eligible.includes(x.name)&&(x.posts||[]).includes(p)&&!refused(c,x.name,p)).map(x=>x.name);
 const nTicked=(c,p)=>{const cands=candidates(c);return draft.ticks[p].filter(n=>cands.includes(n)).length};
 const overPosts=c=>c.openPosts.filter(p=>{const mx=maxTicks(c,p);return mx&&nTicked(c,p)>mx});
 function missingPosts(c){const cands=candidates(c);
@@ -661,9 +663,11 @@ function adminHTML(c){
     ${seuilHTML(c,seuilEditable)}
     <h3 style="margin-top:14px">Personnes cochées au maximum, par poste</h3>
     <p class="sub">0 : sans limite. Modifiable avant chaque tour. Les refus d'office viennent du tableau ci-dessus. En départage, le maximum se règle à l'ouverture du tour (1 par défaut).</p>
+    ${(()=>{const n=c.posts.reduce((a,p)=>a+(c.elected[p]?0:pendRefus(c,p).length),0);return n&&c.phase==="preparation"?`<div class="note err">${n} refus d'office reçu(s) à distance ne sont pas encore repris dans le tableau des refus d'office : ils ne sont ni comptés ci-dessous, ni grisés sur les bulletins.
+      <div class="row" style="margin-top:8px"><button class="btn primary ${confirmKey==="importprefs"?"armed":""}" data-act="importprefs" ${busy?"disabled":""}>${confirmKey==="importprefs"?"Confirmer ?":"Reprendre les réponses dans les refus d'office"}</button></div></div>`:""})()}
     <div class="scroll"><table><thead><tr><th>Poste</th><th>Refus d'office</th><th>Cochables</th><th>Maximum</th></tr></thead><tbody>
     ${c.posts.map((p,i)=>{const el=!!c.elected[p],nr=nRefus(c,p),ok=candidates(c).filter(n=>!refused(c,n,p)).length;
-      return `<tr><th>${esc(p)}</th><td class="num">${nr}</td><td class="num">${el?`<span class="sub">pourvu</span>`:ok}</td>
+      return `<tr><th>${esc(p)}</th><td class="num">${nr}${!el&&pendRefus(c,p).length?` <small style="color:var(--warn)">+${pendRefus(c,p).length} non repris</small>`:""}</td><td class="num">${el?`<span class="sub">pourvu</span>`:ok}</td>
       <td><input id="p-mx-${i}" data-pd type="number" min="0" max="200" value="${maxTicks({...c,departage:null},p)}" style="width:70px" ${seuilEditable&&!el?"":"disabled"} aria-label="Maximum ${esc(p)}"></td></tr>`}).join("")}</tbody></table></div>
     <div class="grid2" style="grid-template-columns:1fr 1fr;margin-top:12px">
       <label class="f">Éligibles (un par ligne)<textarea id="p-elig" ${prep?"":"disabled"}>${esc(c.eligible.join("\n"))}</textarea></label>
